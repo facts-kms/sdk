@@ -8,13 +8,13 @@ This repository is a portable Rust/SQLite reference implementation of Facts Prot
 
 The committed implementation includes:
 
-- all 27 registered object types with positive and negative fixtures;
+- all registered object types with positive and negative fixtures;
 - canonical encoding, signing, Merkle commitments, snapshots, and bundles;
 - causal authorization, consensus, settlement, lifecycle, and reconciliation state;
 - SQLite migrations, WAL recovery, backup/restore, and projected rebuilds;
 - local CLI query and synchronization workflows;
 - HTTP discovery, fetch, push, pull, query, proof, and error handling;
-- an executable conformance corpus currently reporting 75 passing checks, including the machine-readable authority matrix.
+- an executable conformance corpus currently reporting passing checks, including the machine-readable authority matrix.
 
 Encryption, semantic/vector search, hosted multi-writer deployment, independent security review, and comparison with an independent implementation remain outside the verified scope.
 
@@ -31,11 +31,11 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo run --locked -p fact -- conformance run fixtures
 ```
 
-The CLI binary is named `fact`, made available in the [cli (i.e., Command-Line Interface)](https://github.com/facts-kms/cli) repository. The HTTP crate provides an Axum router for embedding in a service; this repository does not ship a standalone HTTP daemon binary.
+The CLI binary is named `fact`, made available in the [facts-kms/sdk](https://github.com/facts-kms/cli) repository. The HTTP crate provides an Axum router for embedding in a service; this repository does not ship a standalone HTTP daemon binary.
 
-For a runnable walkthrough, see [QUICKSTART.md](QUICKSTART.md). The implementation-facing architecture is documented in the [arch (i.e., Fact Architecture)](https://github.com/facts-kms/arch) repository.
+For a runnable walkthrough, see [QUICKSTART.md](QUICKSTART.md). The implementation-facing architecture is documented in the [facts-kms/arch](https://github.com/facts-kms/arch) repository.
 
-## Personal CLI Flow
+## Common CLI Usage
 
 The ergonomic CLI keeps the active ledger in a user-level catalog rather than deriving it from the current directory. Set `FACT_HOME` to override the default platform data location.
 
