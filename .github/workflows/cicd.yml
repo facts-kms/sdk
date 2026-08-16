@@ -20,8 +20,13 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+          rustup component add rustfmt clippy
+          cargo fmt --version
+          cargo clippy --version
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Trust checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Run lint
         run: ./run deploy phase lint
 
@@ -38,8 +43,13 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+          rustup component add rustfmt clippy
+          cargo fmt --version
+          cargo clippy --version
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Trust checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Run test
         run: ./run deploy phase test
 
@@ -57,8 +67,13 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+          rustup component add rustfmt clippy
+          cargo fmt --version
+          cargo clippy --version
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Trust checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Run build
         run: ./run deploy phase build
 
@@ -76,8 +91,13 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+          rustup component add rustfmt clippy
+          cargo fmt --version
+          cargo clippy --version
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Trust checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Run release
         run: ./run deploy phase release
 
@@ -95,7 +115,12 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+          rustup component add rustfmt clippy
+          cargo fmt --version
+          cargo clippy --version
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Trust checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Run deploy
         run: ./run deploy phase deploy

@@ -1,0 +1,8 @@
+{
+  "schema":"facts-reference-scenario-v0",
+  "scenario_id":"invitation-single-use-and-lifecycle",
+  "mode":"reference",
+  "seed":"3030303030303030303030303030303030303030303030303030303030303030",
+  "steps":["open-deliberation","issue-invitation","join","decline-or-revoke","causal-replay"],
+  "expected":{"single_use":true,"invalidated_invitation_rejected":true,"historical_join_preserved":true}
+}

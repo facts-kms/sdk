@@ -1,0 +1,23 @@
+[package]
+name = "fact-conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fact-canonical = { path = "../fact-canonical" }
+fact-commitment = { path = "../fact-commitment" }
+fact-crypto = { path = "../fact-crypto" }
+fact-core = { path = "../fact-core" }
+fact-schema = { path = "../fact-schema" }
+fact-http = { path = "../fact-http" }
+fact-store = { path = "../fact-store" }
+fact-state = { path = "../fact-state" }
+serde_json.workspace = true
+serde.workspace = true
+hex.workspace = true
+uuid.workspace = true
+axum.workspace = true
+http.workspace = true
+tokio.workspace = true
+tower.workspace = true

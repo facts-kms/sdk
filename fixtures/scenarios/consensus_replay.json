@@ -1,0 +1,8 @@
+{
+  "schema":"facts-reference-scenario-v0",
+  "scenario_id":"consensus-topological-replay",
+  "mode":"reference",
+  "seed":"2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+  "steps":["deliberation","join-a","join-b","decision-a","decision-b","settlement"],
+  "expected":{"arrival_order_invariant":true,"consensus":"accepted","settlement_required":true}
+}

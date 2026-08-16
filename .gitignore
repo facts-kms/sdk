@@ -10,7 +10,11 @@
 /.mirror/changes
 
 !/bin
+!/crates
 !/docs
+!/fixtures
+!/migrations
+!/scripts
 !/src
 !/tests
 

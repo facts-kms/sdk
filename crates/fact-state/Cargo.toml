@@ -1,0 +1,9 @@
+[package]
+name = "fact-state"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fact-core = { path = "../fact-core" }
+thiserror.workspace = true

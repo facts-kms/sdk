@@ -1,0 +1,8 @@
+{
+  "schema":"facts-reference-scenario-v0",
+  "scenario_id":"http-push-pull-and-cursor-races",
+  "mode":"api",
+  "seed":"3434343434343434343434343434343434343434343434343434343434343434",
+  "steps":["snapshot-query","cursor","push","pull","stale-commitment","request-id-binding"],
+  "expected":{"cursor_snapshot_bound":true,"stale_commitment_rejected":true,"request_id_bound":true}
+}

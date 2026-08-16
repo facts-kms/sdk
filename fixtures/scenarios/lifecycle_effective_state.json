@@ -1,0 +1,8 @@
+{
+  "schema":"facts-reference-scenario-v0",
+  "scenario_id":"independent-withdrawal-archival-lineages",
+  "mode":"reference",
+  "seed":"3131313131313131313131313131313131313131313131313131313131313131",
+  "steps":["proposition","withdraw-tip","archive-tip","rebuild","concurrent-tip"],
+  "expected":{"dimensions_independent":true,"concurrent_tips_conflict":true,"rebuild_deterministic":true}
+}

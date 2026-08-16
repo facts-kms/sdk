@@ -1,0 +1,8 @@
+{
+  "schema":"facts-reference-scenario-v0",
+  "scenario_id":"snapshot-bundle-proof-exchange",
+  "mode":"reference",
+  "seed":"3333333333333333333333333333333333333333333333333333333333333333",
+  "steps":["commitment","inclusion-proof","non-inclusion-proof","snapshot","bundle","trailing-byte-mutation"],
+  "expected":{"proofs_verify":true,"sorted_hashes":true,"trailing_bytes_rejected":true}
+}

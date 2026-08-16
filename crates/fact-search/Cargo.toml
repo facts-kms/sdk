@@ -1,0 +1,14 @@
+[package]
+name = "fact-search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fact-core = { path = "../fact-core" }
+fact-schema = { path = "../fact-schema" }
+fact-crypto = { path = "../fact-crypto" }
+serde_json.workspace = true
+fact-canonical = { path = "../fact-canonical" }
+rusqlite.workspace = true
+thiserror.workspace = true

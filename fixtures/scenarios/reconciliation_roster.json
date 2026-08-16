@@ -1,0 +1,8 @@
+{
+  "schema":"facts-reference-scenario-v0",
+  "scenario_id":"reconciliation-roster-governance",
+  "mode":"reference",
+  "seed":"3232323232323232323232323232323232323232323232323232323232323232",
+  "steps":["settled-source-a","settled-source-b","candidate-union","eligibility","selection-authority","initial-participants"],
+  "expected":{"evidence_complete":true,"source_settlement_witnesses_valid":true,"selected_set_bound":true}
+}

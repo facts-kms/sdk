@@ -1,0 +1,32 @@
+[package]
+name = "fact-http"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+axum.workspace = true
+bytes.workspace = true
+fact-commitment = { path = "../fact-commitment" }
+fact-canonical = { path = "../fact-canonical" }
+fact-crypto = { path = "../fact-crypto" }
+fact-core = { path = "../fact-core" }
+fact-search = { path = "../fact-search" }
+fact-store = { path = "../fact-store" }
+http.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+flate2.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+fact-sdk = { path = "../fact-sdk" }
+tempfile.workspace = true

@@ -1,0 +1,115 @@
+{
+  "schema": "facts-protocol-authority-matrix-v0",
+  "protocol_version": 0,
+  "core": "fact_protocol_specification_v0.md",
+  "companions": {
+    "objects": "protocol_object_schemas_v0.md",
+    "authorization": "authorization_scope_and_causal_evaluation_v0.md",
+    "decisions": "decision_rule_encoding_and_evaluation_v0.md",
+    "http": "http_binding_and_batch_schemas_v0.md",
+    "commitments": "snapshot_bundle_commitment_proof_schemas_v0.md",
+    "reconciliation_rosters": "reconciliation_roster_governance_v0.md",
+    "search": "search_profile_precision_and_scoring_v0.md",
+    "conformance": "protocol_conformance_suite_v0.md",
+    "vectors": "protocol_test_vectors_v0.md"
+  },
+  "non_authoritative": [
+    "reference_deployment_profile_v0.md",
+    "implementation_plan.md",
+    "retrospectives",
+    "wiki summaries",
+    "coordinator policy"
+  ],
+  "sections": {
+    "authority-order": "protocol_precedence_and_interoperability_matrix_v0.md#1",
+    "validation-precedence": "protocol_precedence_and_interoperability_matrix_v0.md#2",
+    "fetch-identity-semantics": "protocol_precedence_and_interoperability_matrix_v0.md#3",
+    "transport-policy-boundary": "protocol_precedence_and_interoperability_matrix_v0.md#4",
+    "conformance-evidence": "protocol_precedence_and_interoperability_matrix_v0.md#5",
+    "deployment-http-defaults": "reference_deployment_profile_v0.md#2",
+    "caller-authentication-policy": "reference_deployment_profile_v0.md#3",
+    "cli-global-context": "fact_cli_design_recap.md#2-5",
+    "cli-content-commands": "facts_cli_and_remote_bootstrapping_recap.md#cli-commands"
+  },
+  "validation_precedence": [
+    "transport-framing",
+    "decode",
+    "version-identifiers-canonical",
+    "content-hash-identity",
+    "dependency-availability",
+    "cose-signature-key-binding",
+    "ledger-lineage-relationships",
+    "body-schema-invariants",
+    "causal-authorization-time",
+    "decision-effective-state-reconciliation",
+    "coordinator-policy"
+  ],
+  "error_precedence": {
+    "noncanonical-before-hash": "noncanonical-object",
+    "wrong-hash-after-canonical": "hash-mismatch",
+    "missing-key": "dependency-blocked",
+    "invalid-present-signature": "invalid-signature",
+    "valid-unauthorized-object": "unauthorized",
+    "coordinator-private-refusal": "policy-rejected",
+    "concurrent-unresolved-branch": "not-missing-dependency"
+  },
+  "registry": {
+    "schemas": [
+      "facts-protocol-fetch-v0",
+      "facts-protocol-fetch-response-v0",
+      "facts-protocol-pull-v0",
+      "facts-protocol-push-v0",
+      "facts-protocol-query-v0",
+      "facts-protocol-response-v0",
+      "facts-protocol-disposition-v0"
+    ],
+    "media_types": [
+      "application/fact+json",
+      "application/fact+cose",
+      "application/fact-bundle",
+      "application/fact-snapshot",
+      "application/fact-query+json",
+      "application/problem+json"
+    ],
+    "routes": [
+      {"method":"GET","path":"/.well-known/facts","auth":"public"},
+      {"method":"GET","path":"/facts/ledgers","auth":"public"},
+      {"method":"GET","path":"/facts/ledgers/{ledger_id}/objects/{object_id}","auth":"public-or-ledger-policy"},
+      {"method":"POST","path":"/facts/ledgers/{ledger_id}/objects:fetch","auth":"public-or-ledger-policy"},
+      {"method":"POST","path":"/facts/ledgers/{ledger_id}/objects:pull","auth":"restricted-policy"},
+      {"method":"POST","path":"/facts/ledgers/{ledger_id}/objects:push","auth":"required"},
+      {"method":"POST","path":"/facts/ledgers/{ledger_id}/query","auth":"restricted-policy"},
+      {"method":"GET","path":"/facts/ledgers/{ledger_id}/dispositions/{object_id}","auth":"restricted-policy"},
+      {"method":"POST","path":"/facts/ledgers/{ledger_id}/merkle:compare","auth":"restricted-policy"}
+    ],
+    "headers": [
+      "facts-protocol-version",
+      "facts-ledger",
+      "content-type",
+      "content-digest",
+      "signature-input",
+      "signature",
+      "idempotency-key"
+    ],
+    "errors": [
+      "noncanonical-object",
+      "hash-mismatch",
+      "missing-dependency",
+      "dependency-blocked",
+      "invalid-signature",
+      "unauthorized",
+      "policy-rejected",
+      "not-missing-dependency",
+      "authentication-required",
+      "authentication-failed"
+    ],
+    "fixture_roots": [
+      "manifest.json",
+      "authority-matrix.json",
+      "positive/objects",
+      "negative/encoding",
+      "negative/objects",
+      "scenarios"
+    ]
+  }
+}

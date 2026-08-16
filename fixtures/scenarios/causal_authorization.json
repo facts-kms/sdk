@@ -1,0 +1,8 @@
+{
+  "schema":"facts-reference-scenario-v0",
+  "scenario_id":"causal-authorization-revocation",
+  "mode":"reference",
+  "seed":"2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+  "steps":["grant","action","revocation","later-action"],
+  "expected":{"historical_action":"authorized","later_action":"unauthorized","causal_revocation":true}
+}

@@ -1,0 +1,15 @@
+[package]
+name = "fact-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ed25519-dalek.workspace = true
+sha2.workspace = true
+fact-core = { path = "../fact-core" }
+fact-canonical = { path = "../fact-canonical" }
+thiserror.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
