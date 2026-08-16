@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+set -x
+
+echo "Phase [build] START $0"
+
+cargo build --workspace --all-targets --all-features --locked

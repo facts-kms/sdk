@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+set -x
+
+echo "Phase [test] START $0"
+
+cargo test --workspace --all-targets --all-features --locked
+
+cargo test -p fact-sdk conformance::tests --all-features --locked

@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/fact-core",
+  "crates/fact-canonical",
+  "crates/fact-crypto",
+  "crates/fact-schema",
+  "crates/fact-state",
+  "crates/fact-http",
+  "crates/fact-search",
+  "crates/fact-commitment",
+  "crates/fact-store",
+  "crates/fact-sdk",
+  "crates/fact-conformance",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["v7", "serde"] }
+unicode-normalization = "0.1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+ciborium = "0.2"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+clap = { version = "4", features = ["derive"] }
+tempfile = "3"
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["compression-gzip", "trace"] }
+flate2 = "1"
+bytes = "1"
+http = "1"
+hyper = "1"
+hyper-util = { version = "0.1", features = ["server-auto", "tokio"] }
+time = { version = "=0.3.44", features = ["parsing", "formatting"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+proptest = "1"
