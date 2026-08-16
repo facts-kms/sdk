@@ -13,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     container: rust:1.86-bookworm
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
       - name: Install prerequisites
         run: |
           apt-get update
@@ -22,6 +20,8 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Run lint
         run: ./run deploy phase lint
 
@@ -31,8 +31,6 @@ jobs:
     needs:
       - lint
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
       - name: Install prerequisites
         run: |
           apt-get update
@@ -40,6 +38,8 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Run test
         run: ./run deploy phase test
 
@@ -50,8 +50,6 @@ jobs:
       - test
     if: contains(github.ref_name, '-build-')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
       - name: Install prerequisites
         run: |
           apt-get update
@@ -59,6 +57,8 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Run build
         run: ./run deploy phase build
 
@@ -69,8 +69,6 @@ jobs:
       - test
     if: contains(github.ref_name, '-release-')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
       - name: Install prerequisites
         run: |
           apt-get update
@@ -78,6 +76,8 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Run release
         run: ./run deploy phase release
 
@@ -88,8 +88,6 @@ jobs:
       - test
     if: contains(github.ref_name, '-deploy-')
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
       - name: Install prerequisites
         run: |
           apt-get update
@@ -97,5 +95,7 @@ jobs:
           rm -rf /var/lib/apt/lists/*
           git --version
           cargo --version
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Run deploy
         run: ./run deploy phase deploy
