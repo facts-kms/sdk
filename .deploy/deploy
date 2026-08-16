@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-
-set -euo pipefail
-set -x
-
-echo "Phase [deploy] START $0"
