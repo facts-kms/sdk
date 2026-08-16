@@ -21,14 +21,14 @@ export DEPLOY_CONF_TIMEOUT=${DEPLOY_TIMEOUT:=}
 
 # Default Configuration
 DEPLOY_VARS_DEFAULT_CONFIG="
-lint * ./cicd/phases/lint
-test * ./cicd/phases/test
-build *-build-* ./cicd/phases/build
-release *-release-* ./cicd/phases/release
-deploy *-deploy-* ./cicd/phases/deploy"
+lint * ./.deploy/phases/lint
+test * ./.deploy/phases/test
+build *-build-* ./.deploy/phases/build
+release *-release-* ./.deploy/phases/release
+deploy *-deploy-* ./.deploy/phases/deploy"
 
 # Utility Functions
-function cicd_get_branch() {
+function deploy_get_branch() {
   local branch
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
   if [ $? -ne 0 ]; then
@@ -39,7 +39,7 @@ function cicd_get_branch() {
   return 0
 }
 
-function cicd_get_config_lines() {
+function deploy_get_config_lines() {
   local config_source
   if [ -f "$DEPLOY_PATH_CONFIG" ]; then
     config_source=$(cat "$DEPLOY_PATH_CONFIG")
@@ -49,9 +49,9 @@ function cicd_get_config_lines() {
   echo "$config_source"
 }
 
-function cicd_get_parsed_config() {
+function deploy_get_parsed_config() {
   local config_source
-  config_source=$(cicd_get_config_lines)
+  config_source=$(deploy_get_config_lines)
   local parsed=""
   while IFS= read -r line; do
     local trimmed
@@ -69,10 +69,10 @@ function cicd_get_parsed_config() {
   echo "$parsed"
 }
 
-function cicd_get_matched_phases() {
+function deploy_get_matched_phases() {
   local branch="$1"
   local config
-  config=$(cicd_get_parsed_config)
+  config=$(deploy_get_parsed_config)
   [ -z "$config" ] && return 0
   while IFS= read -r line; do
     local phase pattern script
@@ -85,7 +85,7 @@ function cicd_get_matched_phases() {
   done <<< "$config"
 }
 
-function cicd_get_glob_as_regex() {
+function deploy_get_glob_as_regex() {
   local glob="$1"
   local regex="$glob"
   regex=$(echo "$regex" | sed 's/\./\\./g')
@@ -94,14 +94,14 @@ function cicd_get_glob_as_regex() {
   echo "$regex"
 }
 
-function cicd_export_path_vars() {
+function deploy_export_path_vars() {
   export DEPLOY_PATH="${DEPLOY_PATH:=$DEPLOY_PATH}"
   export DEPLOY_CONFIG="${DEPLOY_CONFIG:=$DEPLOY_PATH_CONFIG}"
   export DEPLOY_LOGS="${DEPLOY_LOGS:=$DEPLOY_PATH_LOGS}"
   export DEPLOY_PHASES="${DEPLOY_PHASES:=$DEPLOY_PATH_PHASES}"
 }
 
-function cicd_set_status_line() {
+function deploy_set_status_line() {
   local phase="$1"
   local result="$2"
   local script="$3"
@@ -111,7 +111,7 @@ function cicd_set_status_line() {
 }
 
 # Error Handler
-function cicd_set_error_message() {
+function deploy_set_error_message() {
   local message=$1
   local code=${2:-1}
   local timestamp
@@ -123,16 +123,16 @@ function cicd_set_error_message() {
 }
 
 # Command Functions
-function cicd_cmd_run() {
+function deploy_cmd_run() {
   local branch
-  branch=$(cicd_get_branch)
+  branch=$(deploy_get_branch)
   if [ $? -ne 0 ] || [ -z "$branch" ]; then
     echo "Warning: Not a Git repository. Running wildcard phases only." >&2
     branch="__no_branch__"
   fi
 
   local matched
-  matched=$(cicd_get_matched_phases "$branch")
+  matched=$(deploy_get_matched_phases "$branch")
 
   if [ -z "$matched" ]; then
     echo "No phases matched for branch: $branch"
@@ -140,7 +140,7 @@ function cicd_cmd_run() {
   fi
 
   mkdir -p "$DEPLOY_PATH_LOGS" 2>/dev/null
-  cicd_export_path_vars
+  deploy_export_path_vars
 
   local exit_code=0
   while IFS= read -r entry; do
@@ -149,8 +149,8 @@ function cicd_cmd_run() {
     script=$(echo "$entry" | awk '{print $2}')
 
     if [ ! -f "$script" ] || [ ! -x "$script" ]; then
-      cicd_set_status_line "$phase" "FAILED" "$script"
-      cicd_set_error_message "Phase script not found or not executable: $script"
+      deploy_set_status_line "$phase" "FAILED" "$script"
+      deploy_set_error_message "Phase script not found or not executable: $script"
     fi
 
     local log_file="$DEPLOY_PATH_LOGS/${phase}.log"
@@ -175,9 +175,9 @@ function cicd_cmd_run() {
     fi
 
     if [ $phase_exit -eq 0 ]; then
-      cicd_set_status_line "$phase" "PASSED" "$script"
+      deploy_set_status_line "$phase" "PASSED" "$script"
     else
-      cicd_set_status_line "$phase" "FAILED" "$script"
+      deploy_set_status_line "$phase" "FAILED" "$script"
       exit $phase_exit
     fi
   done <<< "$matched"
@@ -185,7 +185,7 @@ function cicd_cmd_run() {
   exit 0
 }
 
-function cicd_cmd_init() {
+function deploy_cmd_init() {
   if [ -d "$DEPLOY_PATH" ]; then
     echo "Directory '${DEPLOY_PATH}/' already exists."
     echo "Checking for missing components..."
@@ -230,12 +230,12 @@ STUBEOF
   exit 0
 }
 
-function cicd_cmd_edit() {
+function deploy_cmd_edit() {
   local editor="${EDITOR:-vi}"
 
   if [ $# -eq 0 ]; then
     if [ ! -f "$DEPLOY_PATH_CONFIG" ]; then
-      cicd_set_error_message "Config file not found at $DEPLOY_PATH_CONFIG. Run '$DEPLOY_VARS_PROG init' first."
+      deploy_set_error_message "Config file not found at $DEPLOY_PATH_CONFIG. Run '$DEPLOY_VARS_PROG init' first."
     fi
     "$editor" "$DEPLOY_PATH_CONFIG"
     exit 0
@@ -243,10 +243,10 @@ function cicd_cmd_edit() {
 
   local target_phase="$1"
   local config
-  config=$(cicd_get_parsed_config)
+  config=$(deploy_get_parsed_config)
 
   if [ -z "$config" ]; then
-    cicd_set_error_message "No configuration found. Run '$DEPLOY_VARS_PROG init' first."
+    deploy_set_error_message "No configuration found. Run '$DEPLOY_VARS_PROG init' first."
   fi
 
   local scripts=()
@@ -260,37 +260,37 @@ function cicd_cmd_edit() {
   done <<< "$config"
 
   if [ ${#scripts[@]} -eq 0 ]; then
-    cicd_set_error_message "Unknown phase: $target_phase"
+    deploy_set_error_message "Unknown phase: $target_phase"
   fi
 
   "$editor" "${scripts[@]}"
   exit 0
 }
 
-function cicd_cmd_phase() {
+function deploy_cmd_phase() {
   if [ $# -lt 1 ]; then
-    cicd_set_error_message "Usage: $DEPLOY_VARS_PROG phase <name> [args...]"
+    deploy_set_error_message "Usage: $DEPLOY_VARS_PROG phase <name> [args...]"
   fi
 
   local target_phase="$1"
   shift
 
   local branch
-  branch=$(cicd_get_branch)
+  branch=$(deploy_get_branch)
   if [ $? -ne 0 ] || [ -z "$branch" ]; then
     echo "Warning: Not a Git repository. Running wildcard phases only." >&2
     branch="__no_branch__"
   fi
 
   local config
-  config=$(cicd_get_parsed_config)
+  config=$(deploy_get_parsed_config)
   local found=0
   local matched=0
 
-  [ -z "$config" ] && cicd_set_error_message "No configuration found."
+  [ -z "$config" ] && deploy_set_error_message "No configuration found."
 
   mkdir -p "$DEPLOY_PATH_LOGS" 2>/dev/null
-  cicd_export_path_vars
+  deploy_export_path_vars
 
   while IFS= read -r line; do
     local phase pattern script
@@ -305,8 +305,8 @@ function cicd_cmd_phase() {
       matched=1
 
       if [ ! -f "$script" ] || [ ! -x "$script" ]; then
-        cicd_set_status_line "$phase" "FAILED" "$script"
-        cicd_set_error_message "Phase script not found or not executable: $script"
+        deploy_set_status_line "$phase" "FAILED" "$script"
+        deploy_set_error_message "Phase script not found or not executable: $script"
       fi
 
       local log_file="$DEPLOY_PATH_LOGS/${phase}.log"
@@ -331,28 +331,28 @@ function cicd_cmd_phase() {
       fi
 
       if [ $phase_exit -eq 0 ]; then
-        cicd_set_status_line "$phase" "PASSED" "$script"
+        deploy_set_status_line "$phase" "PASSED" "$script"
       else
-        cicd_set_status_line "$phase" "FAILED" "$script"
+        deploy_set_status_line "$phase" "FAILED" "$script"
         exit $phase_exit
       fi
     fi
   done <<< "$config"
 
   if [ $found -eq 0 ]; then
-    cicd_set_error_message "Unknown phase: $target_phase"
+    deploy_set_error_message "Unknown phase: $target_phase"
   fi
 
   if [ $matched -eq 0 ]; then
-    cicd_set_error_message "Phase '$target_phase' does not match branch '$branch'"
+    deploy_set_error_message "Phase '$target_phase' does not match branch '$branch'"
   fi
 
   exit 0
 }
 
-function cicd_cmd_config() {
+function deploy_cmd_config() {
   local config
-  config=$(cicd_get_parsed_config)
+  config=$(deploy_get_parsed_config)
   local using_defaults=0
 
   if [ ! -f "$DEPLOY_PATH_CONFIG" ]; then
@@ -360,7 +360,7 @@ function cicd_cmd_config() {
   fi
 
   local branch
-  branch=$(cicd_get_branch)
+  branch=$(deploy_get_branch)
   local no_git=0
   if [ $? -ne 0 ] || [ -z "$branch" ]; then
     no_git=1
@@ -402,16 +402,16 @@ function cicd_cmd_config() {
   exit 0
 }
 
-function cicd_cmd_gitlab() {
+function deploy_cmd_gitlab() {
   if [ -f ".gitlab-ci.yml" ]; then
-    cicd_set_error_message ".gitlab-ci.yml already exists. Refusing to overwrite."
+    deploy_set_error_message ".gitlab-ci.yml already exists. Refusing to overwrite."
   fi
 
   local config
-  config=$(cicd_get_parsed_config)
+  config=$(deploy_get_parsed_config)
 
   if [ -z "$config" ]; then
-    cicd_set_error_message "No configuration found. Run '$DEPLOY_VARS_PROG init' first."
+    deploy_set_error_message "No configuration found. Run '$DEPLOY_VARS_PROG init' first."
   fi
 
   local stages=""
@@ -475,7 +475,7 @@ function cicd_cmd_gitlab() {
       last_wildcard_job="$job_name"
     else
       local regex
-      regex=$(cicd_get_glob_as_regex "$pattern")
+      regex=$(deploy_get_glob_as_regex "$pattern")
       rule="    - if: \$CI_PIPELINE_SOURCE == \"merge_request_event\" && \$CI_COMMIT_REF_NAME =~ /${regex}/"
       if [ -n "$last_wildcard_job" ]; then
         needs_block="
@@ -501,8 +501,8 @@ ${rule}
   done <<< "$config"
 
   cat > ".gitlab-ci.yml" << GLEOF
-# Generated by cicd v${DEPLOY_VARS_SVER}
-# Do not edit manually. Regenerate with: cicd gitlab
+# Generated by deploy v${DEPLOY_VARS_SVER}
+# Do not edit manually. Regenerate with: deploy gitlab
 
 stages:
 ${stages}
@@ -513,16 +513,16 @@ GLEOF
   exit 0
 }
 
-function cicd_cmd_github() {
-  if [ -f ".github/workflows/cicd.yml" ]; then
-    cicd_set_error_message ".github/workflows/cicd.yml already exists. Refusing to overwrite."
+function deploy_cmd_github() {
+  if [ -f ".github/workflows/deploy.yml" ]; then
+    deploy_set_error_message ".github/workflows/deploy.yml already exists. Refusing to overwrite."
   fi
 
   local config
-  config=$(cicd_get_parsed_config)
+  config=$(deploy_get_parsed_config)
 
   if [ -z "$config" ]; then
-    cicd_set_error_message "No configuration found. Run '$DEPLOY_VARS_PROG init' first."
+    deploy_set_error_message "No configuration found. Run '$DEPLOY_VARS_PROG init' first."
   fi
 
   mkdir -p ".github/workflows" 2>/dev/null
@@ -576,7 +576,7 @@ function cicd_cmd_github() {
       last_wildcard_job="$job_id"
     else
       local regex
-      regex=$(cicd_get_glob_as_regex "$pattern")
+      regex=$(deploy_get_glob_as_regex "$pattern")
       if_line="
     if: contains(github.ref_name, '$(echo "$pattern" | sed "s/\*//g")')"
       if [ -n "$last_wildcard_job" ]; then
@@ -602,9 +602,9 @@ function cicd_cmd_github() {
 "
   done <<< "$config"
 
-  cat > ".github/workflows/cicd.yml" << GHEOF
-# Generated by cicd v${DEPLOY_VARS_SVER}
-# Do not edit manually. Regenerate with: cicd github
+  cat > ".github/workflows/deploy.yml" << GHEOF
+# Generated by deploy v${DEPLOY_VARS_SVER}
+# Do not edit manually. Regenerate with: deploy github
 
 name: DEPLOY Pipeline
 
@@ -616,39 +616,39 @@ on:
 jobs:${jobs_block}
 GHEOF
 
-  echo "Generated .github/workflows/cicd.yml"
+  echo "Generated .github/workflows/deploy.yml"
   exit 0
 }
 
-function cicd_cmd_hook() {
+function deploy_cmd_hook() {
   local git_dir
   git_dir=$(git rev-parse --git-dir 2>/dev/null)
   if [ $? -ne 0 ] || [ -z "$git_dir" ]; then
-    cicd_set_error_message "Not a Git repository. Cannot install hook."
+    deploy_set_error_message "Not a Git repository. Cannot install hook."
   fi
 
   local hooks_dir="${git_dir}/hooks"
   local hook_file="${hooks_dir}/pre-push"
 
   if [ -f "$hook_file" ]; then
-    cicd_set_error_message "pre-push hook already exists at ${hook_file}. Refusing to overwrite."
+    deploy_set_error_message "pre-push hook already exists at ${hook_file}. Refusing to overwrite."
   fi
 
   mkdir -p "$hooks_dir" 2>/dev/null
 
   cat > "$hook_file" << HOOKEOF
 #!/usr/bin/env bash
-# Generated by cicd hook
-# Runs cicd phases before push. Non-zero exit blocks the push.
+# Generated by deploy hook
+# Runs deploy phases before push. Non-zero exit blocks the push.
 
-DEPLOY_BIN=\$(command -v cicd 2>/dev/null)
+DEPLOY_BIN=\$(command -v deploy 2>/dev/null)
 
 if [ -z "\$DEPLOY_BIN" ]; then
   DEPLOY_BIN="$0"
 fi
 
 if [ ! -x "\$DEPLOY_BIN" ]; then
-  echo "Error: cicd not found in PATH or at \$DEPLOY_BIN" >&2
+  echo "Error: deploy not found in PATH or at \$DEPLOY_BIN" >&2
   exit 1
 fi
 
@@ -661,7 +661,7 @@ HOOKEOF
 }
 
 # Help Function
-function cicd_cmd_get_help() {
+function deploy_cmd_get_help() {
   cat << EOF
 Usage: $DEPLOY_VARS_PROG [COMMAND] [ARGS...]
 
@@ -675,7 +675,7 @@ Commands:
                        Example:
                          $DEPLOY_VARS_PROG
 
-  init                 Scaffold the cicd/ directory structure.
+  init                 Scaffold the deploy/ directory structure.
                        Example:
                          $DEPLOY_VARS_PROG init
 
@@ -700,11 +700,11 @@ Commands:
                        Example:
                          $DEPLOY_VARS_PROG gitlab
 
-  github               Generate .github/workflows/cicd.yml from config.
+  github               Generate .github/workflows/deploy.yml from config.
                        Example:
                          $DEPLOY_VARS_PROG github
 
-  hook                 Install a Git pre-push hook that runs cicd.
+  hook                 Install a Git pre-push hook that runs deploy.
                        Example:
                          $DEPLOY_VARS_PROG hook
 
@@ -713,10 +713,10 @@ Commands:
                          $DEPLOY_VARS_PROG help
 
 Environment Variables:
-  DEPLOY_PATH            Override default DEPLOY path (default: ./cicd)
-  DEPLOY_CONFIG          Override config file path (default: ./cicd/config)
-  DEPLOY_LOGS            Override logs directory (default: ./cicd/logs/)
-  DEPLOY_PHASES          Override phases directory (default: ./cicd/phases/)
+  DEPLOY_PATH            Override default DEPLOY path (default: ./deploy)
+  DEPLOY_CONFIG          Override config file path (default: ./deploy/config)
+  DEPLOY_LOGS            Override logs directory (default: ./deploy/logs/)
+  DEPLOY_PHASES          Override phases directory (default: ./deploy/phases/)
   DEPLOY_TIMEOUT         Per-phase timeout in seconds (default: none)
   DEPLOY_STATUS          Show status lines: 1=on, 0=off (default: 1)
   DEPLOY_VERBOSE         Show phase output: 1=on, 0=off (default: 1)
@@ -732,41 +732,41 @@ EOF
 # Dispatch Logic
 if [ $# -eq 0 ]; then
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG run"
-  cicd_cmd_run
+  deploy_cmd_run
 elif [ "$1" == "init" ]; then
   shift
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG init"
-  cicd_cmd_init "$@"
+  deploy_cmd_init "$@"
 elif [ "$1" == "phase" ]; then
   shift
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG phase"
-  cicd_cmd_phase "$@"
+  deploy_cmd_phase "$@"
 elif [ "$1" == "edit" ]; then
   shift
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG edit"
-  cicd_cmd_edit "$@"
+  deploy_cmd_edit "$@"
 elif [ "$1" == "config" ]; then
   shift
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG config"
-  cicd_cmd_config "$@"
+  deploy_cmd_config "$@"
 elif [ "$1" == "gitlab" ]; then
   shift
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG gitlab"
-  cicd_cmd_gitlab "$@"
+  deploy_cmd_gitlab "$@"
 elif [ "$1" == "github" ]; then
   shift
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG github"
-  cicd_cmd_github "$@"
+  deploy_cmd_github "$@"
 elif [ "$1" == "hook" ]; then
   shift
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG hook"
-  cicd_cmd_hook "$@"
+  deploy_cmd_hook "$@"
 elif [ "$1" == "help" ]; then
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG help"
   DEPLOY_VARS_HELP=1
-  cicd_cmd_get_help
+  deploy_cmd_get_help
 else
   DEPLOY_VARS_CLI_CMD="$DEPLOY_VARS_PROG help"
   DEPLOY_VARS_HELP=1
-  cicd_cmd_get_help
+  deploy_cmd_get_help
 fi

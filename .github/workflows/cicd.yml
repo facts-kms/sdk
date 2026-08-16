@@ -1,6 +1,9 @@
 name: Facts SDK
 
 on:
+  push:
+    branches:
+      - '**'
   pull_request:
     branches:
       - '**'
