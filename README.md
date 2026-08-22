@@ -65,20 +65,18 @@ Lower-level protocol-oriented commands remain available under `fact ledger`, `fa
 
 ## Workspace Layout
 
-| Path | Purpose |
-| --- | --- |
-| `crates/fact-core` | IDs, hashes, timestamps, and shared errors |
-| `crates/fact-canonical` | Canonical JSON, Markdown, and deterministic CBOR |
-| `crates/fact-crypto` | Ed25519 and COSE signing/verification |
-| `crates/fact-schema` | Object envelopes and the 27 object schemas |
-| `crates/fact-store` | SQLite storage and migrations |
-| `crates/fact-state` | Causal authorization and derived state |
-| `crates/fact-commitment` | Merkle, snapshot, bundle, and proof formats |
-| `crates/fact-search` | Deterministic lexical search |
-| `crates/fact-http` | Axum HTTP router and blocking HTTP client |
-| `crates/fact-conformance` | Fixture materialization and conformance runner |
-| `fixtures` | Positive, negative, and scenario test corpus |
-| `migrations` | SQLite schema migrations |
+* `crates/fact-core` – IDs, hashes, timestamps, and shared errors
+* `crates/fact-canonical` – Canonical JSON, Markdown, and deterministic CBOR
+* `crates/fact-crypto` – Ed25519 and COSE signing/verification
+* `crates/fact-schema` – Object envelopes and the 27 object schemas
+* `crates/fact-store` – SQLite storage and migrations
+* `crates/fact-state` – Causal authorization and derived state
+* `crates/fact-commitment` – Merkle, snapshot, bundle, and proof formats
+* `crates/fact-search` – Deterministic lexical search
+* `crates/fact-http` – Axum HTTP router and blocking HTTP client
+* `crates/fact-conformance` – Fixture materialization and conformance runner
+* `fixtures` – Positive, negative, and scenario test corpus
+* `migrations` – SQLite schema migrations
 
 ## License
 
