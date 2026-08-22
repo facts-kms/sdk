@@ -29,6 +29,18 @@ deploy *-deploy-* ./.deploy/phases/deploy"
 
 # Utility Functions
 function deploy_get_branch() {
+  # Prefer the CI-provided ref name: CI checkouts are commonly a detached
+  # HEAD (e.g. GitLab merge request pipelines, GitHub Actions checkouts),
+  # where `git rev-parse --abbrev-ref HEAD` returns the literal string
+  # "HEAD" instead of the actual branch name.
+  if [ -n "${CI_COMMIT_REF_NAME:-}" ]; then
+    echo "$CI_COMMIT_REF_NAME"
+    return 0
+  fi
+  if [ -n "${GITHUB_REF_NAME:-}" ]; then
+    echo "$GITHUB_REF_NAME"
+    return 0
+  fi
   local branch
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
   if [ $? -ne 0 ]; then

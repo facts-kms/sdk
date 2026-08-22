@@ -57,7 +57,7 @@ run_does_edit() {
 
 # Set environment variables.
 export USE_RUN=1
-export PATH="$PATH:$PWD/bin"
+export PATH="$PWD/bin:$PATH"
 export CHANGES_FILE_CHANGES_MARKDOWN=CHANGES.md
 export CHANGES_FILE_CHANGES_PLAINTEXT=CHANGES
 export CHANGES_FILE_RELEASE_MARKDOWN=RELEASE.md

@@ -34,4 +34,7 @@
 !QUICKSTART.md
 !README.md
 !/RELEASE*
+!VERSION
+!openapi.json
 !run
+!rust-toolchain.toml

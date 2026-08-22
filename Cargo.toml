@@ -6,16 +6,16 @@ members = [
   "crates/fact-crypto",
   "crates/fact-schema",
   "crates/fact-state",
-  "crates/fact-http",
   "crates/fact-search",
   "crates/fact-commitment",
   "crates/fact-store",
+  "crates/fact-http",
   "crates/fact-sdk",
   "crates/fact-conformance",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 

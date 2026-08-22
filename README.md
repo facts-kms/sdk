@@ -31,7 +31,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo run --locked -p fact -- conformance run fixtures
 ```
 
-The CLI binary is named `fact`, made available in the [facts-kms/sdk](https://github.com/facts-kms/cli) repository. The HTTP crate provides an Axum router for embedding in a service; this repository does not ship a standalone HTTP daemon binary.
+The CLI binary is named `fact`, made available in the [facts-kms/cli](https://github.com/facts-kms/cli) repository. The `fact-http` crate provides an Axum router for embedding in a service; this repository does not ship a standalone HTTP daemon binary.
 
 For a runnable walkthrough, see [QUICKSTART.md](QUICKSTART.md). The implementation-facing architecture is documented in the [facts-kms/arch](https://github.com/facts-kms/arch) repository.
 
@@ -75,8 +75,7 @@ Lower-level protocol-oriented commands remain available under `fact ledger`, `fa
 | `crates/fact-state` | Causal authorization and derived state |
 | `crates/fact-commitment` | Merkle, snapshot, bundle, and proof formats |
 | `crates/fact-search` | Deterministic lexical search |
-| `crates/fact-http` | Axum HTTP binding |
-| `crates/fact-cli` | `fact` command-line interface |
+| `crates/fact-http` | Axum HTTP router and blocking HTTP client |
 | `crates/fact-conformance` | Fixture materialization and conformance runner |
 | `fixtures` | Positive, negative, and scenario test corpus |
 | `migrations` | SQLite schema migrations |

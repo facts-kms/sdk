@@ -1,0 +1,2289 @@
+{
+  "components": {
+    "headers": {
+      "ContentDigest": {
+        "schema": {
+          "pattern": "^sha-256=:[A-Za-z0-9+/]+:?$",
+          "type": "string"
+        }
+      },
+      "FactsLedger": {
+        "schema": {
+          "$ref": "#/components/schemas/UuidV7"
+        }
+      },
+      "FactsProtocolVersion": {
+        "schema": {
+          "const": "0"
+        }
+      },
+      "FactsRequestId": {
+        "schema": {
+          "$ref": "#/components/schemas/UuidV7"
+        }
+      }
+    },
+    "parameters": {
+      "FactsProtocolVersion": {
+        "in": "header",
+        "name": "Facts-Protocol-Version",
+        "required": false,
+        "schema": {
+          "const": "0"
+        }
+      },
+      "Hash": {
+        "in": "path",
+        "name": "hash",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Sha256Hash"
+        }
+      },
+      "LedgerId": {
+        "in": "path",
+        "name": "ledger_id",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UuidV7"
+        }
+      },
+      "NormalizedNamespace": {
+        "in": "path",
+        "name": "normalized_namespace",
+        "required": true,
+        "schema": {
+          "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+          "type": "string"
+        }
+      },
+      "ObjectId": {
+        "in": "path",
+        "name": "object_id",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UuidV7"
+        }
+      },
+      "ObjectRef": {
+        "description": "UUIDv7 object ID or 64-character lowercase SHA-256 content hash. The server dispatches by syntax; no header changes the interpretation.",
+        "in": "path",
+        "name": "object_ref",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/ObjectRef"
+        }
+      }
+    },
+    "responses": {
+      "Problem": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "Stable Facts problem response. The operation's x-facts-failure-codes extension lists the codes and triggering conditions implemented by the reference binding."
+      }
+    },
+    "schemas": {
+      "Base64Url": {
+        "pattern": "^[A-Za-z0-9_-]*$",
+        "type": "string"
+      },
+      "CommitmentResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "commitment": {
+            "$ref": "#/components/schemas/Base64Url"
+          },
+          "commitment_hash": {
+            "$ref": "#/components/schemas/Sha256Hash"
+          },
+          "schema": {
+            "type": "string"
+          },
+          "signed_commitment": {
+            "$ref": "#/components/schemas/Base64Url"
+          }
+        },
+        "type": "object"
+      },
+      "CoordinatorDiscovery": {
+        "additionalProperties": true,
+        "properties": {
+          "api_root": {
+            "format": "uri",
+            "type": "string"
+          },
+          "coordinator_assertion": {
+            "$ref": "#/components/schemas/Base64Url"
+          },
+          "deployment_profile": {
+            "type": "object"
+          },
+          "openapi": {
+            "type": "string"
+          },
+          "schema": {
+            "const": "facts-protocol-coordinator-discovery-v0"
+          },
+          "supported_media_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "supported_versions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema",
+          "api_root",
+          "supported_versions",
+          "supported_media_types"
+        ],
+        "type": "object"
+      },
+      "DispositionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "disposition": {
+            "$ref": "#/components/schemas/Base64Url"
+          },
+          "schema": {
+            "const": "facts-protocol-disposition-response-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "disposition"
+        ],
+        "type": "object"
+      },
+      "FactsProtocolResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "object"
+          },
+          "protocol_version": {
+            "const": 0
+          },
+          "request_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "schema": {
+            "const": "facts-protocol-response-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "request_id",
+          "protocol_version",
+          "body"
+        ],
+        "type": "object"
+      },
+      "FetchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "missing_hashes": {
+            "items": {
+              "$ref": "#/components/schemas/Sha256Hash"
+            },
+            "type": "array"
+          },
+          "missing_ids": {
+            "items": {
+              "$ref": "#/components/schemas/UuidV7"
+            },
+            "type": "array"
+          },
+          "not_modified": {
+            "items": {
+              "$ref": "#/components/schemas/Sha256Hash"
+            },
+            "type": "array"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/WireObjectRef"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "const": "facts-protocol-fetch-response-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "objects"
+        ],
+        "type": "object"
+      },
+      "JsonObject": {
+        "type": "object"
+      },
+      "LedgerList": {
+        "additionalProperties": false,
+        "properties": {
+          "ledgers": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema": {
+            "const": "facts-protocol-ledger-list-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "ledgers",
+          "next_cursor"
+        ],
+        "type": "object"
+      },
+      "LedgerMetadata": {
+        "additionalProperties": true,
+        "properties": {
+          "coordinator_assertion": {
+            "type": "object"
+          },
+          "genesis": {
+            "$ref": "#/components/schemas/WireObjectRef"
+          },
+          "genesis_hash": {
+            "$ref": "#/components/schemas/Sha256Hash"
+          },
+          "latest_commitment": {
+            "type": "object"
+          },
+          "ledger_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "namespace_assertions": {
+            "items": {
+              "$ref": "#/components/schemas/WireObjectRef"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "const": "facts-protocol-ledger-metadata-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "ledger_id",
+          "genesis_hash"
+        ],
+        "type": "object"
+      },
+      "MerkleCompareResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "commitment_hash": {
+            "$ref": "#/components/schemas/Sha256Hash"
+          },
+          "difference": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "operation": {
+            "enum": [
+              "include",
+              "exclude",
+              "difference"
+            ]
+          },
+          "proofs": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "const": "facts-protocol-merkle-compare-response-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "operation",
+          "commitment_hash",
+          "proofs"
+        ],
+        "type": "object"
+      },
+      "NamespaceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "assertions": {
+            "items": {
+              "$ref": "#/components/schemas/WireObjectRef"
+            },
+            "type": "array"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "naming_authority_actor_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "resolution": {
+            "enum": [
+              "unresolved",
+              "unique",
+              "ambiguous"
+            ]
+          },
+          "schema": {
+            "const": "facts-protocol-namespace-response-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "namespace",
+          "assertions",
+          "resolution"
+        ],
+        "type": "object"
+      },
+      "ObjectError": {
+        "additionalProperties": true,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "object_hash": {
+            "$ref": "#/components/schemas/Sha256Hash"
+          },
+          "object_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          }
+        },
+        "type": "object"
+      },
+      "ObjectList": {
+        "additionalProperties": false,
+        "properties": {
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/WireObjectRef"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "const": "facts-protocol-object-list-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "objects",
+          "next_cursor"
+        ],
+        "type": "object"
+      },
+      "ObjectRef": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          {
+            "$ref": "#/components/schemas/Sha256Hash"
+          }
+        ]
+      },
+      "Problem": {
+        "additionalProperties": true,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "first_error_code": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "ledger_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UuidV7"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missing_dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/WireObjectRef"
+            },
+            "type": "array"
+          },
+          "object_errors": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectError"
+            },
+            "type": "array"
+          },
+          "protocol_version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "request_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "retry": {
+            "$ref": "#/components/schemas/RetryInfo"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "supported_versions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "Proof": {
+        "additionalProperties": true,
+        "properties": {
+          "content_hash": {
+            "$ref": "#/components/schemas/Sha256Hash"
+          },
+          "ledger_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "proof_type": {
+            "enum": [
+              "inclusion",
+              "non-inclusion"
+            ]
+          },
+          "schema": {
+            "const": "facts-protocol-proof-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "ledger_id",
+          "content_hash",
+          "proof_type"
+        ],
+        "type": "object"
+      },
+      "PullResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "commitment": {
+            "type": "object"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "inclusion_proofs": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ledger_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "object_count": {
+            "type": "integer"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/WireObjectRef"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "const": "facts-protocol-pull-response-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "ledger_id",
+          "objects",
+          "commitment",
+          "next_cursor",
+          "complete"
+        ],
+        "type": "object"
+      },
+      "PushResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_count": {
+            "type": "integer"
+          },
+          "bundle_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UuidV7"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commitment": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "deferred_count": {
+            "type": "integer"
+          },
+          "ledger_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          },
+          "rejected_count": {
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "const": "facts-protocol-push-response-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "ledger_id",
+          "results",
+          "accepted_count",
+          "rejected_count",
+          "deferred_count"
+        ],
+        "type": "object"
+      },
+      "QueryResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result_set_statement": {
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "const": "facts-protocol-query-response-v0"
+          }
+        },
+        "required": [
+          "schema",
+          "results",
+          "next_cursor"
+        ],
+        "type": "object"
+      },
+      "RetryInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "after_seconds": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "Sha256Hash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "Timestamp": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "UuidV7": {
+        "format": "uuid",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "WireObjectRef": {
+        "additionalProperties": true,
+        "properties": {
+          "content_hash": {
+            "$ref": "#/components/schemas/Sha256Hash"
+          },
+          "cose_sign1": {
+            "$ref": "#/components/schemas/Base64Url"
+          },
+          "object_id": {
+            "$ref": "#/components/schemas/UuidV7"
+          }
+        },
+        "required": [
+          "object_id",
+          "content_hash"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerActorToken": {
+        "bearerFormat": "opaque Facts actor transport token",
+        "description": "Authenticates transport access for an existing Facts actor. Authorization is evaluated by the SDK against the actor's ledger capabilities; tokens do not define a separate permission namespace.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "HttpMessageSignature": {
+        "description": "Optional deployment profile using RFC 9421 HTTP Message Signatures.",
+        "in": "header",
+        "name": "Signature",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Reference HTTP binding for the Facts protocol. Canonical encoding, COSE framing, signed object validity, cursor verification, and protocol semantics remain governed by the Facts protocol specifications and conformance tests.",
+    "title": "Facts HTTP Transport",
+    "version": "0.1.0"
+  },
+  "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+  "openapi": "3.1.0",
+  "paths": {
+    "/.well-known/facts": {
+      "get": {
+        "operationId": "discoverCoordinator",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/CoordinatorDiscovery"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "summary": "Discover coordinator protocol support and limits.",
+        "x-facts-failure-codes": [
+          "not-acceptable",
+          "unsupported-version",
+          "temporarily-unavailable"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers": {
+      "get": {
+        "operationId": "listLedgers",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/LedgerList"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "List visible ledgers with cursor pagination fields.",
+        "x-facts-failure-codes": [
+          "not-acceptable",
+          "unsupported-version",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}": {
+      "get": {
+        "operationId": "getLedger",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/LedgerMetadata"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Read ledger metadata and current coordinator assertion.",
+        "x-facts-failure-codes": [
+          "invalid-identifier",
+          "ledger-not-found",
+          "commitment-error",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/commitment": {
+      "get": {
+        "operationId": "getLegacyCommitment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/CommitmentResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Get the compatibility commitment view.",
+        "x-facts-failure-codes": [
+          "invalid-identifier",
+          "commitment-error",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/commitments/latest": {
+      "get": {
+        "operationId": "getLatestCommitment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/CommitmentResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Get the latest signed ledger commitment.",
+        "x-facts-failure-codes": [
+          "invalid-identifier",
+          "commitment-error",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/dispositions/{object_id}": {
+      "get": {
+        "operationId": "getDisposition",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          },
+          {
+            "$ref": "#/components/parameters/ObjectId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/DispositionResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Get the coordinator disposition for an object.",
+        "x-facts-failure-codes": [
+          "authentication-required",
+          "authentication-failed",
+          "invalid-identifier",
+          "object-not-found",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/merkle-comparisons": {
+      "post": {
+        "operationId": "compareMerkle",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/fact+json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/MerkleCompareResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Compare requested object hashes against the current commitment.",
+        "x-facts-failure-codes": [
+          "authentication-required",
+          "invalid-content-digest",
+          "noncanonical-request",
+          "invalid-request",
+          "commitment-mismatch",
+          "proof-unavailable"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/object-fetches": {
+      "post": {
+        "operationId": "fetchObjects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/fact+json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/FetchResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Fetch a batch of signed objects by ID or hash.",
+        "x-facts-failure-codes": [
+          "invalid-content-digest",
+          "noncanonical-request",
+          "invalid-request",
+          "invalid-identifier",
+          "hash-mismatch",
+          "payload-too-large"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/object-pulls": {
+      "post": {
+        "operationId": "pullObjects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/fact+json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/PullResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              },
+              "application/fact-snapshot": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Pull missing objects or a snapshot for a ledger scope.",
+        "x-facts-failure-codes": [
+          "authentication-required",
+          "invalid-content-digest",
+          "noncanonical-request",
+          "unsupported-scope",
+          "stale-commitment",
+          "invalid-cursor",
+          "snapshot-requires-full-set"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/object-pushes": {
+      "post": {
+        "operationId": "pushObjects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/fact-bundle": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/PushResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "207": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactsProtocolResponse"
+                }
+              }
+            },
+            "description": "Bundle accepted with per-object failures."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Push a bundle of signed protocol objects.",
+        "x-facts-failure-codes": [
+          "authentication-required",
+          "invalid-content-digest",
+          "malformed-request",
+          "ledger-mismatch",
+          "object-equivocation",
+          "missing-dependency",
+          "invalid-signature",
+          "unauthorized-object"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": [
+          "propose",
+          "deliberate",
+          "invite",
+          "comment",
+          "accept",
+          "reject",
+          "withdraw",
+          "archive",
+          "admin"
+        ]
+      }
+    },
+    "/ledgers/{ledger_id}/objects": {
+      "get": {
+        "operationId": "listObjects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/ObjectList"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "List object summaries in protocol cursor order.",
+        "x-facts-failure-codes": [
+          "invalid-identifier",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/objects/{object_ref}": {
+      "get": {
+        "operationId": "getObject",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          },
+          {
+            "$ref": "#/components/parameters/ObjectRef"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+cose": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Fetch one signed object by UUIDv7 object ID or SHA-256 content hash.",
+        "x-facts-failure-codes": [
+          "invalid-identifier",
+          "object-not-found",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/proofs/{hash}": {
+      "get": {
+        "operationId": "getProof",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          },
+          {
+            "$ref": "#/components/parameters/Hash"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/Proof"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Get inclusion or non-inclusion evidence for a content hash.",
+        "x-facts-failure-codes": [
+          "invalid-identifier",
+          "commitment-error",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/ledgers/{ledger_id}/queries": {
+      "post": {
+        "operationId": "queryLedger",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LedgerId"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/fact-query+json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/QueryResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Execute a canonical Facts query against a ledger.",
+        "x-facts-failure-codes": [
+          "authentication-required",
+          "invalid-content-digest",
+          "invalid-query",
+          "ledger-mismatch",
+          "invalid-cursor",
+          "cursor-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    },
+    "/namespaces/{normalized_namespace}": {
+      "get": {
+        "operationId": "resolveNamespace",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/FactsProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/NormalizedNamespace"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/fact+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FactsProtocolResponse"
+                    },
+                    {
+                      "properties": {
+                        "body": {
+                          "$ref": "#/components/schemas/NamespaceResponse"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Successful protocol response.",
+            "headers": {
+              "Content-Digest": {
+                "$ref": "#/components/headers/ContentDigest"
+              },
+              "Facts-Protocol-Version": {
+                "$ref": "#/components/headers/FactsProtocolVersion"
+              },
+              "Facts-Request-Id": {
+                "$ref": "#/components/headers/FactsRequestId"
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "406": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "415": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": [
+          {},
+          {
+            "BearerActorToken": []
+          }
+        ],
+        "summary": "Resolve visible namespace assertions.",
+        "x-facts-failure-codes": [
+          "namespace-not-found",
+          "coordinator-error"
+        ],
+        "x-facts-preconditions": [
+          "Facts-Protocol-Version, when present, must be 0.",
+          "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+          "Requests with bodies must include a Content-Digest matching the encoded body.",
+          "JSON request bodies must be canonical protocol JSON for their request schema.",
+          "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+        ],
+        "x-facts-required-capabilities": []
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerActorToken": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "/facts"
+    }
+  ]
+}
