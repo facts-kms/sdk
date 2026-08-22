@@ -21,9 +21,11 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
     io::Read as IoRead,
+    path::{Path as FsPath, PathBuf},
     str::FromStr,
     sync::{Arc, Mutex},
 };
+use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use tower::ServiceExt;
 use tower_http::trace::TraceLayer;
@@ -40,6 +42,201 @@ const REQUEST_HEADER_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 const REQUEST_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 const MAX_OBJECT_LIST_PAGE_SIZE: usize = 1_000;
 
+#[derive(Clone, Debug)]
+pub struct Client {
+    base_url: String,
+    http: reqwest::blocking::Client,
+}
+
+impl Client {
+    pub fn new(base_url: impl Into<String>) -> Self {
+        Self::with_http_client(base_url, reqwest::blocking::Client::new())
+    }
+
+    pub fn with_http_client(base_url: impl Into<String>, http: reqwest::blocking::Client) -> Self {
+        Self {
+            base_url: base_url.into().trim_end_matches('/').to_owned(),
+            http,
+        }
+    }
+
+    pub fn discovery(&self) -> Result<serde_json::Value, reqwest::Error> {
+        self.get_json("/.well-known/facts")
+    }
+
+    pub fn ledgers(&self) -> Result<serde_json::Value, reqwest::Error> {
+        self.get_json("/facts/ledgers")
+    }
+
+    pub fn ledger(
+        &self,
+        ledger_id: impl std::fmt::Display,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.get_json(&format!("/facts/ledgers/{ledger_id}"))
+    }
+
+    pub fn namespace(
+        &self,
+        normalized_namespace: impl std::fmt::Display,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.get_json(&format!("/facts/namespaces/{normalized_namespace}"))
+    }
+
+    pub fn objects(&self, ledger_id: impl std::fmt::Display) -> Result<Vec<u8>, reqwest::Error> {
+        self.get_bytes(&format!("/facts/ledgers/{ledger_id}/objects"), BUNDLE_MEDIA)
+    }
+
+    pub fn object(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        object_ref: impl std::fmt::Display,
+    ) -> Result<Vec<u8>, reqwest::Error> {
+        self.get_bytes(
+            &format!("/facts/ledgers/{ledger_id}/objects/{object_ref}"),
+            COSE_MEDIA,
+        )
+    }
+
+    pub fn object_by_id(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        object_id: impl std::fmt::Display,
+    ) -> Result<Vec<u8>, reqwest::Error> {
+        self.object(ledger_id, object_id)
+    }
+
+    pub fn object_by_hash(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        hash: impl std::fmt::Display,
+    ) -> Result<Vec<u8>, reqwest::Error> {
+        self.object(ledger_id, hash)
+    }
+
+    pub fn latest_commitment(
+        &self,
+        ledger_id: impl std::fmt::Display,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.get_json(&format!("/facts/ledgers/{ledger_id}/commitments/latest"))
+    }
+
+    pub fn commitment(
+        &self,
+        ledger_id: impl std::fmt::Display,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.get_json(&format!("/facts/ledgers/{ledger_id}/commitment"))
+    }
+
+    pub fn proof(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        hash: impl std::fmt::Display,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.get_json(&format!("/facts/ledgers/{ledger_id}/proofs/{hash}"))
+    }
+
+    pub fn fetch_objects(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        body: &[u8],
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.post_json_body(
+            &format!("/facts/ledgers/{ledger_id}/object-fetches"),
+            body,
+            JSON_MEDIA,
+        )
+    }
+
+    pub fn pull_objects(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        body: &[u8],
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.post_json_body(
+            &format!("/facts/ledgers/{ledger_id}/object-pulls"),
+            body,
+            JSON_MEDIA,
+        )
+    }
+
+    pub fn query(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        body: &[u8],
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.post_json_body(
+            &format!("/facts/ledgers/{ledger_id}/queries"),
+            body,
+            QUERY_MEDIA,
+        )
+    }
+
+    pub fn merkle_compare(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        body: &[u8],
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.post_json_body(
+            &format!("/facts/ledgers/{ledger_id}/merkle-comparisons"),
+            body,
+            JSON_MEDIA,
+        )
+    }
+
+    pub fn push_bundle(
+        &self,
+        ledger_id: impl std::fmt::Display,
+        bundle: &[u8],
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.post_json_body(
+            &format!("/facts/ledgers/{ledger_id}/object-pushes"),
+            bundle,
+            BUNDLE_MEDIA,
+        )
+    }
+
+    fn get_json(&self, path: &str) -> Result<serde_json::Value, reqwest::Error> {
+        self.http
+            .get(self.endpoint(path))
+            .header(reqwest::header::ACCEPT, JSON_MEDIA)
+            .send()?
+            .error_for_status()?
+            .json()
+    }
+
+    fn get_bytes(&self, path: &str, accept: &'static str) -> Result<Vec<u8>, reqwest::Error> {
+        Ok(self
+            .http
+            .get(self.endpoint(path))
+            .header(reqwest::header::ACCEPT, accept)
+            .send()?
+            .error_for_status()?
+            .bytes()?
+            .to_vec())
+    }
+
+    fn post_json_body(
+        &self,
+        path: &str,
+        body: &[u8],
+        content_type: &'static str,
+    ) -> Result<serde_json::Value, reqwest::Error> {
+        self.http
+            .post(self.endpoint(path))
+            .header(reqwest::header::ACCEPT, JSON_MEDIA)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .header("Content-Digest", digest(body))
+            .body(body.to_vec())
+            .send()?
+            .error_for_status()?
+            .json()
+    }
+
+    fn endpoint(&self, path: &str) -> String {
+        format!("{}{}", self.base_url, path)
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<Mutex<Store>>,
@@ -49,8 +246,25 @@ pub struct AppState {
     write_queue: Arc<tokio::sync::Semaphore>,
     write_gate: Arc<tokio::sync::Semaphore>,
     caller_auth: CallerAuthPolicy,
+    bearer_tokens: Arc<dyn BearerTokenStore>,
     ledger_visibility: Arc<Mutex<HashMap<[u8; 16], LedgerVisibility>>>,
     nonces: Arc<Mutex<HashMap<String, OffsetDateTime>>>,
+    hosted_ledgers: Arc<HashMap<[u8; 16], HostedLedgerState>>,
+}
+
+/// Per-ledger state for a reference server that hosts a local ledger catalog.
+pub struct HostedLedger {
+    pub ledger_id: fact_core::ObjectId,
+    pub store: Store,
+    pub coordinator_key: fact_crypto::SigningKey,
+    pub coordinator_actor_id: fact_core::ObjectId,
+}
+
+#[derive(Clone)]
+struct HostedLedgerState {
+    store: Arc<Mutex<Store>>,
+    coordinator_key: Arc<fact_crypto::SigningKey>,
+    coordinator_actor_id: fact_core::ObjectId,
 }
 
 /// Coordinator-local visibility policy for a hosted ledger.
@@ -102,6 +316,559 @@ impl Default for CallerAuthPolicy {
     fn default() -> Self {
         Self::permissive()
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuthenticatedActor {
+    pub actor_id: fact_core::ObjectId,
+    pub token_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BearerTokenError {
+    Invalid,
+    Expired,
+    Revoked,
+    LedgerMismatch,
+    StoreUnavailable,
+}
+
+pub trait BearerTokenStore: Send + Sync {
+    fn authenticate(
+        &self,
+        token_hash: &str,
+        ledger: Option<[u8; 16]>,
+        now: OffsetDateTime,
+    ) -> Result<AuthenticatedActor, BearerTokenError>;
+}
+
+#[derive(Default)]
+pub struct EmptyBearerTokenStore;
+
+impl BearerTokenStore for EmptyBearerTokenStore {
+    fn authenticate(
+        &self,
+        _token_hash: &str,
+        _ledger: Option<[u8; 16]>,
+        _now: OffsetDateTime,
+    ) -> Result<AuthenticatedActor, BearerTokenError> {
+        Err(BearerTokenError::Invalid)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BearerTokenRecord {
+    pub token_id: String,
+    pub actor_id: fact_core::ObjectId,
+    pub ledger_id: Option<fact_core::ObjectId>,
+    pub created_at: OffsetDateTime,
+    pub expires_at: Option<OffsetDateTime>,
+    pub revoked_at: Option<OffsetDateTime>,
+    pub last_used_at: Option<OffsetDateTime>,
+    pub label: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct IssuedBearerToken {
+    pub token: String,
+    pub record: BearerTokenRecord,
+}
+
+#[derive(Default)]
+pub struct InMemoryBearerTokenStore {
+    records_by_hash: Mutex<HashMap<String, BearerTokenRecord>>,
+}
+
+impl InMemoryBearerTokenStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn issue_token(
+        &self,
+        actor_id: fact_core::ObjectId,
+        ledger_id: Option<fact_core::ObjectId>,
+        expires_at: Option<OffsetDateTime>,
+        label: Option<String>,
+    ) -> IssuedBearerToken {
+        let token = base64url_encode(&rand::random::<[u8; 32]>());
+        let record = BearerTokenRecord {
+            token_id: uuid::Uuid::now_v7().to_string(),
+            actor_id,
+            ledger_id,
+            created_at: OffsetDateTime::now_utc(),
+            expires_at,
+            revoked_at: None,
+            last_used_at: None,
+            label,
+        };
+        self.records_by_hash
+            .lock()
+            .unwrap()
+            .insert(token_hash(&token), record.clone());
+        IssuedBearerToken { token, record }
+    }
+
+    pub fn revoke_token(&self, token: &str, revoked_at: OffsetDateTime) -> bool {
+        let mut records = self.records_by_hash.lock().unwrap();
+        let Some(record) = records.get_mut(&token_hash(token)) else {
+            return false;
+        };
+        record.revoked_at = Some(revoked_at);
+        true
+    }
+
+    pub fn record_for_token(&self, token: &str) -> Option<BearerTokenRecord> {
+        self.records_by_hash
+            .lock()
+            .unwrap()
+            .get(&token_hash(token))
+            .cloned()
+    }
+}
+
+impl BearerTokenStore for InMemoryBearerTokenStore {
+    fn authenticate(
+        &self,
+        token_hash: &str,
+        ledger: Option<[u8; 16]>,
+        now: OffsetDateTime,
+    ) -> Result<AuthenticatedActor, BearerTokenError> {
+        let mut records = self.records_by_hash.lock().unwrap();
+        let record = records
+            .get_mut(token_hash)
+            .ok_or(BearerTokenError::Invalid)?;
+        if record.revoked_at.is_some() {
+            return Err(BearerTokenError::Revoked);
+        }
+        if record
+            .expires_at
+            .is_some_and(|expires_at| expires_at <= now)
+        {
+            return Err(BearerTokenError::Expired);
+        }
+        if let (Some(expected), Some(actual)) = (record.ledger_id, ledger) {
+            if *expected.uuid().as_bytes() != actual {
+                return Err(BearerTokenError::LedgerMismatch);
+            }
+        }
+        record.last_used_at = Some(now);
+        Ok(AuthenticatedActor {
+            actor_id: record.actor_id,
+            token_id: record.token_id.clone(),
+        })
+    }
+}
+
+pub struct FileBearerTokenStore {
+    path: PathBuf,
+    records_by_hash: Mutex<HashMap<String, BearerTokenRecord>>,
+}
+
+impl FileBearerTokenStore {
+    pub fn open(path: impl Into<PathBuf>) -> std::io::Result<Self> {
+        let path = path.into();
+        let records_by_hash = if path.exists() {
+            let bytes = std::fs::read(&path)?;
+            serde_json::from_slice::<Vec<PersistedBearerTokenRecord>>(&bytes)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?
+                .into_iter()
+                .map(|record| record.try_into_pair())
+                .collect::<Result<HashMap<_, _>, _>>()?
+        } else {
+            HashMap::new()
+        };
+        Ok(Self {
+            path,
+            records_by_hash: Mutex::new(records_by_hash),
+        })
+    }
+
+    pub fn issue_token(
+        &self,
+        actor_id: fact_core::ObjectId,
+        ledger_id: Option<fact_core::ObjectId>,
+        expires_at: Option<OffsetDateTime>,
+        label: Option<String>,
+    ) -> std::io::Result<IssuedBearerToken> {
+        let token = base64url_encode(&rand::random::<[u8; 32]>());
+        let record = BearerTokenRecord {
+            token_id: uuid::Uuid::now_v7().to_string(),
+            actor_id,
+            ledger_id,
+            created_at: OffsetDateTime::now_utc(),
+            expires_at,
+            revoked_at: None,
+            last_used_at: None,
+            label,
+        };
+        {
+            let mut records = self.records_by_hash.lock().unwrap();
+            records.insert(token_hash(&token), record.clone());
+            self.save_locked(&records)?;
+        }
+        Ok(IssuedBearerToken { token, record })
+    }
+
+    pub fn revoke_token(&self, token: &str, revoked_at: OffsetDateTime) -> std::io::Result<bool> {
+        let mut records = self.records_by_hash.lock().unwrap();
+        let Some(record) = records.get_mut(&token_hash(token)) else {
+            return Ok(false);
+        };
+        record.revoked_at = Some(revoked_at);
+        self.save_locked(&records)?;
+        Ok(true)
+    }
+
+    pub fn records(&self) -> Vec<BearerTokenRecord> {
+        let mut records = self
+            .records_by_hash
+            .lock()
+            .unwrap()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        records.sort_by(|a, b| a.token_id.cmp(&b.token_id));
+        records
+    }
+
+    fn save_locked(&self, records: &HashMap<String, BearerTokenRecord>) -> std::io::Result<()> {
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut persisted = records
+            .iter()
+            .map(|(hash, record)| PersistedBearerTokenRecord::from_record(hash, record))
+            .collect::<std::io::Result<Vec<_>>>()?;
+        persisted.sort_by(|a, b| a.token_id.cmp(&b.token_id));
+        let bytes = serde_json::to_vec_pretty(&persisted)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        atomic_write(&self.path, &bytes)
+    }
+}
+
+impl BearerTokenStore for FileBearerTokenStore {
+    fn authenticate(
+        &self,
+        token_hash: &str,
+        ledger: Option<[u8; 16]>,
+        now: OffsetDateTime,
+    ) -> Result<AuthenticatedActor, BearerTokenError> {
+        let mut records = self.records_by_hash.lock().unwrap();
+        let record = records
+            .get_mut(token_hash)
+            .ok_or(BearerTokenError::Invalid)?;
+        if record.revoked_at.is_some() {
+            return Err(BearerTokenError::Revoked);
+        }
+        if record
+            .expires_at
+            .is_some_and(|expires_at| expires_at <= now)
+        {
+            return Err(BearerTokenError::Expired);
+        }
+        if let (Some(expected), Some(actual)) = (record.ledger_id, ledger) {
+            if *expected.uuid().as_bytes() != actual {
+                return Err(BearerTokenError::LedgerMismatch);
+            }
+        }
+        record.last_used_at = Some(now);
+        let actor = AuthenticatedActor {
+            actor_id: record.actor_id,
+            token_id: record.token_id.clone(),
+        };
+        let _ = self.save_locked(&records);
+        Ok(actor)
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct PersistedBearerTokenRecord {
+    token_hash: String,
+    token_id: String,
+    actor_id: String,
+    ledger_id: Option<String>,
+    created_at: String,
+    expires_at: Option<String>,
+    revoked_at: Option<String>,
+    last_used_at: Option<String>,
+    label: Option<String>,
+}
+
+impl PersistedBearerTokenRecord {
+    fn from_record(hash: &str, record: &BearerTokenRecord) -> std::io::Result<Self> {
+        Ok(Self {
+            token_hash: hash.to_owned(),
+            token_id: record.token_id.clone(),
+            actor_id: record.actor_id.to_string(),
+            ledger_id: record.ledger_id.map(|ledger| ledger.to_string()),
+            created_at: format_rfc3339(record.created_at)?,
+            expires_at: record.expires_at.map(format_rfc3339).transpose()?,
+            revoked_at: record.revoked_at.map(format_rfc3339).transpose()?,
+            last_used_at: record.last_used_at.map(format_rfc3339).transpose()?,
+            label: record.label.clone(),
+        })
+    }
+
+    fn try_into_pair(self) -> std::io::Result<(String, BearerTokenRecord)> {
+        let record = BearerTokenRecord {
+            token_id: self.token_id,
+            actor_id: self
+                .actor_id
+                .parse()
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?,
+            ledger_id: self
+                .ledger_id
+                .map(|ledger| {
+                    ledger.parse().map_err(|error| {
+                        std::io::Error::new(std::io::ErrorKind::InvalidData, error)
+                    })
+                })
+                .transpose()?,
+            created_at: parse_rfc3339(&self.created_at)?,
+            expires_at: self.expires_at.as_deref().map(parse_rfc3339).transpose()?,
+            revoked_at: self.revoked_at.as_deref().map(parse_rfc3339).transpose()?,
+            last_used_at: self
+                .last_used_at
+                .as_deref()
+                .map(parse_rfc3339)
+                .transpose()?,
+            label: self.label,
+        };
+        Ok((self.token_hash, record))
+    }
+}
+
+fn format_rfc3339(value: OffsetDateTime) -> std::io::Result<String> {
+    value
+        .format(&Rfc3339)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+}
+
+fn parse_rfc3339(value: &str) -> std::io::Result<OffsetDateTime> {
+    OffsetDateTime::parse(value, &Rfc3339)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+}
+
+fn atomic_write(path: &FsPath, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp_path = path.with_extension("tmp");
+    std::fs::write(&tmp_path, bytes)?;
+    std::fs::rename(tmp_path, path)
+}
+
+pub struct SqliteBearerTokenStore {
+    connection: Mutex<rusqlite::Connection>,
+}
+
+impl SqliteBearerTokenStore {
+    pub fn open(path: impl AsRef<FsPath>) -> rusqlite::Result<Self> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        }
+        let connection = rusqlite::Connection::open(path)?;
+        initialize_token_schema(&connection)?;
+        Ok(Self {
+            connection: Mutex::new(connection),
+        })
+    }
+
+    pub fn issue_token(
+        &self,
+        actor_id: fact_core::ObjectId,
+        ledger_id: Option<fact_core::ObjectId>,
+        expires_at: Option<OffsetDateTime>,
+        label: Option<String>,
+    ) -> rusqlite::Result<IssuedBearerToken> {
+        let token = base64url_encode(&rand::random::<[u8; 32]>());
+        let record = BearerTokenRecord {
+            token_id: uuid::Uuid::now_v7().to_string(),
+            actor_id,
+            ledger_id,
+            created_at: OffsetDateTime::now_utc(),
+            expires_at,
+            revoked_at: None,
+            last_used_at: None,
+            label,
+        };
+        let connection = self.connection.lock().unwrap();
+        connection.execute(
+            "INSERT INTO tokens (
+                token_hash, token_id, actor_id, ledger_id, created_at,
+                expires_at, revoked_at, last_used_at, label
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7)",
+            rusqlite::params![
+                token_hash(&token),
+                record.token_id,
+                record.actor_id.to_string(),
+                record.ledger_id.map(|ledger| ledger.to_string()),
+                format_rfc3339_lossless(record.created_at),
+                record.expires_at.map(format_rfc3339_lossless),
+                record.label,
+            ],
+        )?;
+        Ok(IssuedBearerToken { token, record })
+    }
+
+    pub fn list_tokens(&self) -> rusqlite::Result<Vec<BearerTokenRecord>> {
+        let connection = self.connection.lock().unwrap();
+        let mut statement = connection.prepare(
+            "SELECT token_id, actor_id, ledger_id, created_at, expires_at,
+                    revoked_at, last_used_at, label
+             FROM tokens
+             ORDER BY created_at, token_id",
+        )?;
+        let records = statement
+            .query_map([], sqlite_token_record)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(records)
+    }
+
+    pub fn revoke_token_id(
+        &self,
+        token_id: &str,
+        revoked_at: OffsetDateTime,
+    ) -> rusqlite::Result<bool> {
+        let connection = self.connection.lock().unwrap();
+        let changed = connection.execute(
+            "UPDATE tokens
+             SET revoked_at = ?1
+             WHERE token_id = ?2 AND revoked_at IS NULL",
+            rusqlite::params![format_rfc3339_lossless(revoked_at), token_id],
+        )?;
+        Ok(changed > 0)
+    }
+
+    pub fn prune_expired_or_revoked(&self, now: OffsetDateTime) -> rusqlite::Result<usize> {
+        let connection = self.connection.lock().unwrap();
+        connection.execute(
+            "DELETE FROM tokens
+             WHERE revoked_at IS NOT NULL
+                OR (expires_at IS NOT NULL AND expires_at <= ?1)",
+            rusqlite::params![format_rfc3339_lossless(now)],
+        )
+    }
+}
+
+impl BearerTokenStore for SqliteBearerTokenStore {
+    fn authenticate(
+        &self,
+        token_hash: &str,
+        ledger: Option<[u8; 16]>,
+        now: OffsetDateTime,
+    ) -> Result<AuthenticatedActor, BearerTokenError> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| BearerTokenError::StoreUnavailable)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT token_id, actor_id, ledger_id, created_at, expires_at,
+                        revoked_at, last_used_at, label
+                 FROM tokens
+                 WHERE token_hash = ?1",
+            )
+            .map_err(|_| BearerTokenError::StoreUnavailable)?;
+        let record = statement
+            .query_row(rusqlite::params![token_hash], sqlite_token_record)
+            .map_err(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => BearerTokenError::Invalid,
+                _ => BearerTokenError::StoreUnavailable,
+            })?;
+        if record.revoked_at.is_some() {
+            return Err(BearerTokenError::Revoked);
+        }
+        if record
+            .expires_at
+            .is_some_and(|expires_at| expires_at <= now)
+        {
+            return Err(BearerTokenError::Expired);
+        }
+        if let (Some(expected), Some(actual)) = (record.ledger_id, ledger) {
+            if *expected.uuid().as_bytes() != actual {
+                return Err(BearerTokenError::LedgerMismatch);
+            }
+        }
+        connection
+            .execute(
+                "UPDATE tokens SET last_used_at = ?1 WHERE token_hash = ?2",
+                rusqlite::params![format_rfc3339_lossless(now), token_hash],
+            )
+            .map_err(|_| BearerTokenError::StoreUnavailable)?;
+        Ok(AuthenticatedActor {
+            actor_id: record.actor_id,
+            token_id: record.token_id,
+        })
+    }
+}
+
+fn initialize_token_schema(connection: &rusqlite::Connection) -> rusqlite::Result<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS tokens (
+            token_hash TEXT PRIMARY KEY,
+            token_id TEXT NOT NULL UNIQUE,
+            actor_id TEXT NOT NULL,
+            ledger_id TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT,
+            revoked_at TEXT,
+            last_used_at TEXT,
+            label TEXT
+        );
+        CREATE INDEX IF NOT EXISTS tokens_actor_id_idx ON tokens(actor_id);
+        CREATE INDEX IF NOT EXISTS tokens_ledger_id_idx ON tokens(ledger_id);
+        CREATE INDEX IF NOT EXISTS tokens_expires_at_idx ON tokens(expires_at);
+        CREATE INDEX IF NOT EXISTS tokens_revoked_at_idx ON tokens(revoked_at);",
+    )
+}
+
+fn sqlite_token_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<BearerTokenRecord> {
+    let actor_id: String = row.get(1)?;
+    let ledger_id: Option<String> = row.get(2)?;
+    let created_at: String = row.get(3)?;
+    let expires_at: Option<String> = row.get(4)?;
+    let revoked_at: Option<String> = row.get(5)?;
+    let last_used_at: Option<String> = row.get(6)?;
+    Ok(BearerTokenRecord {
+        token_id: row.get(0)?,
+        actor_id: parse_sqlite_object_id(&actor_id)?,
+        ledger_id: ledger_id
+            .as_deref()
+            .map(parse_sqlite_object_id)
+            .transpose()?,
+        created_at: parse_sqlite_timestamp(&created_at)?,
+        expires_at: expires_at
+            .as_deref()
+            .map(parse_sqlite_timestamp)
+            .transpose()?,
+        revoked_at: revoked_at
+            .as_deref()
+            .map(parse_sqlite_timestamp)
+            .transpose()?,
+        last_used_at: last_used_at
+            .as_deref()
+            .map(parse_sqlite_timestamp)
+            .transpose()?,
+        label: row.get(7)?,
+    })
+}
+
+fn parse_sqlite_object_id(value: &str) -> rusqlite::Result<fact_core::ObjectId> {
+    value.parse().map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+    })
+}
+
+fn parse_sqlite_timestamp(value: &str) -> rusqlite::Result<OffsetDateTime> {
+    OffsetDateTime::parse(value, &Rfc3339).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+    })
+}
+
+fn format_rfc3339_lossless(value: OffsetDateTime) -> String {
+    value
+        .format(&Rfc3339)
+        .expect("OffsetDateTime can be formatted as RFC3339")
 }
 
 impl AppState {
@@ -168,9 +935,75 @@ impl AppState {
             write_queue: Arc::new(tokio::sync::Semaphore::new(MAX_QUEUED_WRITES)),
             write_gate: Arc::new(tokio::sync::Semaphore::new(1)),
             caller_auth,
+            bearer_tokens: Arc::new(EmptyBearerTokenStore),
             ledger_visibility: Arc::new(Mutex::new(HashMap::new())),
             nonces: Arc::new(Mutex::new(HashMap::new())),
+            hosted_ledgers: Arc::new(HashMap::new()),
         }
+    }
+
+    pub fn new_with_reference_policy_for_ledgers(
+        api_root: impl Into<String>,
+        ledgers: Vec<HostedLedger>,
+    ) -> Result<Self, String> {
+        Self::new_with_policy_for_ledgers(api_root, ledgers, CallerAuthPolicy::reference())
+    }
+
+    pub fn new_without_caller_auth_for_ledgers(
+        api_root: impl Into<String>,
+        ledgers: Vec<HostedLedger>,
+    ) -> Result<Self, String> {
+        Self::new_with_policy_for_ledgers(api_root, ledgers, CallerAuthPolicy::permissive())
+    }
+
+    fn new_with_policy_for_ledgers(
+        api_root: impl Into<String>,
+        ledgers: Vec<HostedLedger>,
+        caller_auth: CallerAuthPolicy,
+    ) -> Result<Self, String> {
+        let mut ledgers = ledgers.into_iter();
+        let first = ledgers
+            .next()
+            .ok_or_else(|| "at least one hosted ledger is required".to_owned())?;
+        let first_id = *first.ledger_id.uuid().as_bytes();
+        let mut state = Self::new_with_policy(
+            first.store,
+            api_root,
+            first.coordinator_key,
+            first.coordinator_actor_id,
+            caller_auth,
+        );
+        let mut hosted_ledgers = HashMap::new();
+        hosted_ledgers.insert(
+            first_id,
+            HostedLedgerState {
+                store: state.store.clone(),
+                coordinator_key: state.coordinator_key.clone(),
+                coordinator_actor_id: state.coordinator_actor_id,
+            },
+        );
+        for ledger in ledgers {
+            let ledger_id = *ledger.ledger_id.uuid().as_bytes();
+            if hosted_ledgers.contains_key(&ledger_id) {
+                let duplicate = ledger.ledger_id;
+                return Err(format!("duplicate hosted ledger: {duplicate}"));
+            }
+            hosted_ledgers.insert(
+                ledger_id,
+                HostedLedgerState {
+                    store: Arc::new(Mutex::new(ledger.store)),
+                    coordinator_key: Arc::new(ledger.coordinator_key),
+                    coordinator_actor_id: ledger.coordinator_actor_id,
+                },
+            );
+        }
+        state.hosted_ledgers = Arc::new(hosted_ledgers);
+        Ok(state)
+    }
+
+    pub fn with_bearer_token_store(mut self, bearer_tokens: Arc<dyn BearerTokenStore>) -> Self {
+        self.bearer_tokens = bearer_tokens;
+        self
     }
 
     /// Set coordinator-local visibility for a hosted ledger.
@@ -199,15 +1032,28 @@ impl AppState {
             .copied()
             .unwrap_or(LedgerVisibility::Public)
     }
+
+    fn scoped_to_ledger(&self, ledger: &[u8; 16]) -> Option<Self> {
+        if self.hosted_ledgers.is_empty() {
+            return Some(self.clone());
+        }
+        let hosted = self.hosted_ledgers.get(ledger)?;
+        let mut scoped = self.clone();
+        scoped.store = hosted.store.clone();
+        scoped.coordinator_key = hosted.coordinator_key.clone();
+        scoped.coordinator_actor_id = hosted.coordinator_actor_id;
+        Some(scoped)
+    }
 }
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/.well-known/facts", get(discovery))
+        .route("/facts/openapi.json", get(openapi_json))
         .route("/facts/ledgers", get(ledgers))
         .route("/facts/ledgers/{ledger_id}", get(ledger))
         .route(
-            "/facts/ledgers/{ledger_id}/objects/{object_id}",
-            get(object_by_id),
+            "/facts/ledgers/{ledger_id}/objects/{object_ref}",
+            get(object_by_ref),
         )
         .route(
             "/facts/ledgers/{ledger_id}/dispositions/{object_id}",
@@ -222,23 +1068,37 @@ pub fn router(state: AppState) -> Router {
         .route("/facts/ledgers/{ledger_id}/proofs/{hash}", get(proof))
         .route(
             "/facts/ledgers/{ledger_id}/objects/by-hash/{hash}",
-            get(object_by_hash),
+            get(object_by_ref),
         )
         .route(
             "/facts/ledgers/{ledger_id}/objects:fetch",
             post(fetch_objects),
         )
         .route(
+            "/facts/ledgers/{ledger_id}/object-fetches",
+            post(fetch_objects),
+        )
+        .route(
             "/facts/ledgers/{ledger_id}/objects:pull",
             post(pull_objects),
         )
+        .route(
+            "/facts/ledgers/{ledger_id}/object-pulls",
+            post(pull_objects),
+        )
         .route("/facts/ledgers/{ledger_id}/query", post(query))
+        .route("/facts/ledgers/{ledger_id}/queries", post(query))
         .route(
             "/facts/ledgers/{ledger_id}/merkle:compare",
             post(merkle_compare),
         )
+        .route(
+            "/facts/ledgers/{ledger_id}/merkle-comparisons",
+            post(merkle_compare),
+        )
         .route("/facts/namespaces/{normalized_namespace}", get(namespace))
         .route("/facts/ledgers/{ledger_id}/objects:push", post(push))
+        .route("/facts/ledgers/{ledger_id}/object-pushes", post(push))
         .fallback(not_found)
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .layer(TraceLayer::new_for_http())
@@ -299,6 +1159,510 @@ async fn serve_with_header_timeout(
     }
 }
 
+async fn openapi_json() -> Response {
+    let body = canonicalize(&serde_json::to_vec(&openapi_spec()).unwrap()).unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    headers.insert("content-digest", digest(&body));
+    (StatusCode::OK, headers, body).into_response()
+}
+
+/// Generate the OpenAPI 3.1 transport contract for this reference binding.
+///
+/// The generated document intentionally describes the noun-only virtual
+/// operation resources. The router also keeps legacy colon-route aliases for
+/// compatibility, but those aliases are not part of the primary OpenAPI
+/// surface.
+pub fn openapi_spec() -> serde_json::Value {
+    let mut paths = serde_json::Map::new();
+    for operation in OPENAPI_OPERATIONS {
+        paths.insert(operation.path.to_owned(), operation.path_item());
+    }
+    serde_json::json!({
+        "openapi":"3.1.0",
+        "info":{
+            "title":"Facts HTTP Transport",
+            "version":env!("CARGO_PKG_VERSION"),
+            "description":"Reference HTTP binding for the Facts protocol. Canonical encoding, COSE framing, signed object validity, cursor verification, and protocol semantics remain governed by the Facts protocol specifications and conformance tests."
+        },
+        "jsonSchemaDialect":"https://spec.openapis.org/oas/3.1/dialect/base",
+        "servers":[{"url":"/facts"}],
+        "paths":paths,
+        "components":openapi_components(),
+        "security":[{"BearerActorToken":[]}]
+    })
+}
+
+#[derive(Clone, Copy)]
+struct OpenApiOperation {
+    method: &'static str,
+    path: &'static str,
+    operation_id: &'static str,
+    summary: &'static str,
+    request_media: Option<&'static str>,
+    success_media: &'static [&'static str],
+    success_schema: Option<&'static str>,
+    requires_auth: bool,
+    capabilities: &'static [&'static str],
+    failure_codes: &'static [&'static str],
+}
+
+impl OpenApiOperation {
+    fn path_item(self) -> serde_json::Value {
+        let mut operation = serde_json::json!({
+            "operationId":self.operation_id,
+            "summary":self.summary,
+            "parameters":[{"$ref":"#/components/parameters/FactsProtocolVersion"}],
+            "responses":self.responses(),
+            "x-facts-failure-codes":self.failure_codes,
+            "x-facts-required-capabilities":self.capabilities,
+            "x-facts-preconditions":[
+                "Facts-Protocol-Version, when present, must be 0.",
+                "Facts-Ledger, when present on ledger-scoped requests, must match the path ledger_id.",
+                "Requests with bodies must include a Content-Digest matching the encoded body.",
+                "JSON request bodies must be canonical protocol JSON for their request schema.",
+                "Identifier path fields must be lowercase hyphenated UUIDv7 strings or lowercase SHA-256 hashes as declared."
+            ]
+        });
+        if self.path.contains("{ledger_id}") {
+            operation["parameters"]
+                .as_array_mut()
+                .expect("parameters is an array")
+                .push(serde_json::json!({"$ref":"#/components/parameters/LedgerId"}));
+        }
+        if self.path.contains("{object_ref}") {
+            operation["parameters"]
+                .as_array_mut()
+                .expect("parameters is an array")
+                .push(serde_json::json!({"$ref":"#/components/parameters/ObjectRef"}));
+        }
+        if self.path.contains("{object_id}") {
+            operation["parameters"]
+                .as_array_mut()
+                .expect("parameters is an array")
+                .push(serde_json::json!({"$ref":"#/components/parameters/ObjectId"}));
+        }
+        if self.path.contains("{hash}") {
+            operation["parameters"]
+                .as_array_mut()
+                .expect("parameters is an array")
+                .push(serde_json::json!({"$ref":"#/components/parameters/Hash"}));
+        }
+        if self.path.contains("{normalized_namespace}") {
+            operation["parameters"]
+                .as_array_mut()
+                .expect("parameters is an array")
+                .push(serde_json::json!({"$ref":"#/components/parameters/NormalizedNamespace"}));
+        }
+        if let Some(media) = self.request_media {
+            operation["requestBody"] = serde_json::json!({
+                "required":true,
+                "content":{
+                    media:{
+                        "schema":if media == BUNDLE_MEDIA {
+                            serde_json::json!({"type":"string","format":"binary"})
+                        } else {
+                            serde_json::json!({"type":"object"})
+                        }
+                    }
+                }
+            });
+        }
+        if self.requires_auth {
+            operation["security"] = serde_json::json!([{"BearerActorToken":[]}]);
+        } else {
+            operation["security"] = serde_json::json!([{}, {"BearerActorToken":[]}]);
+        }
+        if self.path.starts_with("/.well-known/") {
+            operation["servers"] = serde_json::json!([{"url":"/"}]);
+        }
+        serde_json::json!({self.method:operation})
+    }
+
+    fn responses(self) -> serde_json::Value {
+        let mut responses = serde_json::Map::new();
+        let status = if self.operation_id == "pushObjects" {
+            "201"
+        } else {
+            "200"
+        };
+        let mut content = serde_json::Map::new();
+        for media in self.success_media {
+            let schema = if *media == JSON_MEDIA {
+                serde_json::json!({
+                    "allOf":[
+                        {"$ref":"#/components/schemas/FactsProtocolResponse"},
+                        {"type":"object","properties":{"body":{"$ref":format!("#/components/schemas/{}", self.success_schema.unwrap_or("JsonObject"))}}}
+                    ]
+                })
+            } else {
+                serde_json::json!({"type":"string","format":"binary"})
+            };
+            content.insert((*media).to_owned(), serde_json::json!({"schema":schema}));
+        }
+        responses.insert(
+            status.to_owned(),
+            serde_json::json!({
+                "description":"Successful protocol response.",
+                "headers":{
+                    "Facts-Protocol-Version":{"$ref":"#/components/headers/FactsProtocolVersion"},
+                    "Facts-Request-Id":{"$ref":"#/components/headers/FactsRequestId"},
+                    "Content-Digest":{"$ref":"#/components/headers/ContentDigest"}
+                },
+                "content":content
+            }),
+        );
+        if self.operation_id == "pushObjects" {
+            responses.insert(
+                "207".to_owned(),
+                serde_json::json!({
+                    "description":"Bundle accepted with per-object failures.",
+                    "content":{JSON_MEDIA:{"schema":{"$ref":"#/components/schemas/FactsProtocolResponse"}}}
+                }),
+            );
+        }
+        for status in [
+            "400", "401", "403", "404", "406", "409", "413", "415", "422", "503",
+        ] {
+            responses.insert(
+                status.to_owned(),
+                serde_json::json!({"$ref":"#/components/responses/Problem"}),
+            );
+        }
+        serde_json::Value::Object(responses)
+    }
+}
+
+const OPENAPI_OPERATIONS: &[OpenApiOperation] = &[
+    OpenApiOperation {
+        method: "get",
+        path: "/.well-known/facts",
+        operation_id: "discoverCoordinator",
+        summary: "Discover coordinator protocol support and limits.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("CoordinatorDiscovery"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &[
+            "not-acceptable",
+            "unsupported-version",
+            "temporarily-unavailable",
+        ],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/ledgers",
+        operation_id: "listLedgers",
+        summary: "List visible ledgers with cursor pagination fields.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("LedgerList"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &["not-acceptable", "unsupported-version", "coordinator-error"],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/ledgers/{ledger_id}",
+        operation_id: "getLedger",
+        summary: "Read ledger metadata and current coordinator assertion.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("LedgerMetadata"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &[
+            "invalid-identifier",
+            "ledger-not-found",
+            "commitment-error",
+            "coordinator-error",
+        ],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/ledgers/{ledger_id}/objects",
+        operation_id: "listObjects",
+        summary: "List object summaries in protocol cursor order.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("ObjectList"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &["invalid-identifier", "coordinator-error"],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/ledgers/{ledger_id}/objects/{object_ref}",
+        operation_id: "getObject",
+        summary: "Fetch one signed object by UUIDv7 object ID or SHA-256 content hash.",
+        request_media: None,
+        success_media: &[COSE_MEDIA],
+        success_schema: None,
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &[
+            "invalid-identifier",
+            "object-not-found",
+            "coordinator-error",
+        ],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/ledgers/{ledger_id}/dispositions/{object_id}",
+        operation_id: "getDisposition",
+        summary: "Get the coordinator disposition for an object.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("DispositionResponse"),
+        requires_auth: true,
+        capabilities: &[],
+        failure_codes: &[
+            "authentication-required",
+            "authentication-failed",
+            "invalid-identifier",
+            "object-not-found",
+            "coordinator-error",
+        ],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/ledgers/{ledger_id}/commitments/latest",
+        operation_id: "getLatestCommitment",
+        summary: "Get the latest signed ledger commitment.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("CommitmentResponse"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &[
+            "invalid-identifier",
+            "commitment-error",
+            "coordinator-error",
+        ],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/ledgers/{ledger_id}/commitment",
+        operation_id: "getLegacyCommitment",
+        summary: "Get the compatibility commitment view.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("CommitmentResponse"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &[
+            "invalid-identifier",
+            "commitment-error",
+            "coordinator-error",
+        ],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/ledgers/{ledger_id}/proofs/{hash}",
+        operation_id: "getProof",
+        summary: "Get inclusion or non-inclusion evidence for a content hash.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("Proof"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &[
+            "invalid-identifier",
+            "commitment-error",
+            "coordinator-error",
+        ],
+    },
+    OpenApiOperation {
+        method: "post",
+        path: "/ledgers/{ledger_id}/object-fetches",
+        operation_id: "fetchObjects",
+        summary: "Fetch a batch of signed objects by ID or hash.",
+        request_media: Some(JSON_MEDIA),
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("FetchResponse"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &[
+            "invalid-content-digest",
+            "noncanonical-request",
+            "invalid-request",
+            "invalid-identifier",
+            "hash-mismatch",
+            "payload-too-large",
+        ],
+    },
+    OpenApiOperation {
+        method: "post",
+        path: "/ledgers/{ledger_id}/object-pulls",
+        operation_id: "pullObjects",
+        summary: "Pull missing objects or a snapshot for a ledger scope.",
+        request_media: Some(JSON_MEDIA),
+        success_media: &[JSON_MEDIA, SNAPSHOT_MEDIA],
+        success_schema: Some("PullResponse"),
+        requires_auth: true,
+        capabilities: &[],
+        failure_codes: &[
+            "authentication-required",
+            "invalid-content-digest",
+            "noncanonical-request",
+            "unsupported-scope",
+            "stale-commitment",
+            "invalid-cursor",
+            "snapshot-requires-full-set",
+        ],
+    },
+    OpenApiOperation {
+        method: "post",
+        path: "/ledgers/{ledger_id}/object-pushes",
+        operation_id: "pushObjects",
+        summary: "Push a bundle of signed protocol objects.",
+        request_media: Some(BUNDLE_MEDIA),
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("PushResponse"),
+        requires_auth: true,
+        capabilities: &[
+            "propose",
+            "deliberate",
+            "invite",
+            "comment",
+            "accept",
+            "reject",
+            "withdraw",
+            "archive",
+            "admin",
+        ],
+        failure_codes: &[
+            "authentication-required",
+            "invalid-content-digest",
+            "malformed-request",
+            "ledger-mismatch",
+            "object-equivocation",
+            "missing-dependency",
+            "invalid-signature",
+            "unauthorized-object",
+        ],
+    },
+    OpenApiOperation {
+        method: "post",
+        path: "/ledgers/{ledger_id}/queries",
+        operation_id: "queryLedger",
+        summary: "Execute a canonical Facts query against a ledger.",
+        request_media: Some(QUERY_MEDIA),
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("QueryResponse"),
+        requires_auth: true,
+        capabilities: &[],
+        failure_codes: &[
+            "authentication-required",
+            "invalid-content-digest",
+            "invalid-query",
+            "ledger-mismatch",
+            "invalid-cursor",
+            "cursor-error",
+        ],
+    },
+    OpenApiOperation {
+        method: "post",
+        path: "/ledgers/{ledger_id}/merkle-comparisons",
+        operation_id: "compareMerkle",
+        summary: "Compare requested object hashes against the current commitment.",
+        request_media: Some(JSON_MEDIA),
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("MerkleCompareResponse"),
+        requires_auth: true,
+        capabilities: &[],
+        failure_codes: &[
+            "authentication-required",
+            "invalid-content-digest",
+            "noncanonical-request",
+            "invalid-request",
+            "commitment-mismatch",
+            "proof-unavailable",
+        ],
+    },
+    OpenApiOperation {
+        method: "get",
+        path: "/namespaces/{normalized_namespace}",
+        operation_id: "resolveNamespace",
+        summary: "Resolve visible namespace assertions.",
+        request_media: None,
+        success_media: &[JSON_MEDIA],
+        success_schema: Some("NamespaceResponse"),
+        requires_auth: false,
+        capabilities: &[],
+        failure_codes: &["namespace-not-found", "coordinator-error"],
+    },
+];
+
+fn openapi_components() -> serde_json::Value {
+    serde_json::json!({
+        "securitySchemes":{
+            "BearerActorToken":{
+                "type":"http",
+                "scheme":"bearer",
+                "bearerFormat":"opaque Facts actor transport token",
+                "description":"Authenticates transport access for an existing Facts actor. Authorization is evaluated by the SDK against the actor's ledger capabilities; tokens do not define a separate permission namespace."
+            },
+            "HttpMessageSignature":{
+                "type":"apiKey",
+                "in":"header",
+                "name":"Signature",
+                "description":"Optional deployment profile using RFC 9421 HTTP Message Signatures."
+            }
+        },
+        "parameters":{
+            "LedgerId":{"name":"ledger_id","in":"path","required":true,"schema":{"$ref":"#/components/schemas/UuidV7"}},
+            "ObjectRef":{"name":"object_ref","in":"path","required":true,"description":"UUIDv7 object ID or 64-character lowercase SHA-256 content hash. The server dispatches by syntax; no header changes the interpretation.","schema":{"$ref":"#/components/schemas/ObjectRef"}},
+            "ObjectId":{"name":"object_id","in":"path","required":true,"schema":{"$ref":"#/components/schemas/UuidV7"}},
+            "Hash":{"name":"hash","in":"path","required":true,"schema":{"$ref":"#/components/schemas/Sha256Hash"}},
+            "NormalizedNamespace":{"name":"normalized_namespace","in":"path","required":true,"schema":{"type":"string","pattern":"^[a-z0-9][a-z0-9._/-]*$"}},
+            "FactsProtocolVersion":{"name":"Facts-Protocol-Version","in":"header","required":false,"schema":{"const":"0"}}
+        },
+        "headers":{
+            "FactsProtocolVersion":{"schema":{"const":"0"}},
+            "FactsRequestId":{"schema":{"$ref":"#/components/schemas/UuidV7"}},
+            "FactsLedger":{"schema":{"$ref":"#/components/schemas/UuidV7"}},
+            "ContentDigest":{"schema":{"type":"string","pattern":"^sha-256=:[A-Za-z0-9+/]+:?$"}}
+        },
+        "responses":{
+            "Problem":{
+                "description":"Stable Facts problem response. The operation's x-facts-failure-codes extension lists the codes and triggering conditions implemented by the reference binding.",
+                "content":{"application/problem+json":{"schema":{"$ref":"#/components/schemas/Problem"}}}
+            }
+        },
+        "schemas":{
+            "UuidV7":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+            "Sha256Hash":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+            "ObjectRef":{"oneOf":[{"$ref":"#/components/schemas/UuidV7"},{"$ref":"#/components/schemas/Sha256Hash"}]},
+            "Base64Url":{"type":"string","pattern":"^[A-Za-z0-9_-]*$"},
+            "Timestamp":{"type":"string","format":"date-time"},
+            "JsonObject":{"type":"object"},
+            "WireObjectRef":{"type":"object","required":["object_id","content_hash"],"properties":{"object_id":{"$ref":"#/components/schemas/UuidV7"},"content_hash":{"$ref":"#/components/schemas/Sha256Hash"},"cose_sign1":{"$ref":"#/components/schemas/Base64Url"}},"additionalProperties":true},
+            "RetryInfo":{"type":["object","null"],"properties":{"after_seconds":{"type":"integer","minimum":0},"reason":{"type":"string"}},"additionalProperties":false},
+            "ObjectError":{"type":"object","properties":{"code":{"type":"string"},"object_id":{"$ref":"#/components/schemas/UuidV7"},"object_hash":{"$ref":"#/components/schemas/Sha256Hash"},"detail":{"type":"string"}},"additionalProperties":true},
+            "FactsProtocolResponse":{"type":"object","required":["schema","request_id","protocol_version","body"],"properties":{"schema":{"const":"facts-protocol-response-v0"},"request_id":{"$ref":"#/components/schemas/UuidV7"},"protocol_version":{"const":0},"body":{"type":"object"}},"additionalProperties":false},
+            "Problem":{"type":"object","required":["type","title","status","code","request_id"],"properties":{"type":{"type":"string","format":"uri"},"title":{"type":"string"},"status":{"type":"integer"},"code":{"type":"string"},"first_error_code":{"type":"string"},"detail":{"type":"string"},"instance":{"type":"string"},"request_id":{"$ref":"#/components/schemas/UuidV7"},"protocol_version":{"type":["integer","null"]},"ledger_id":{"anyOf":[{"$ref":"#/components/schemas/UuidV7"},{"type":"null"}]},"object_errors":{"type":"array","items":{"$ref":"#/components/schemas/ObjectError"}},"missing_dependencies":{"type":"array","items":{"$ref":"#/components/schemas/WireObjectRef"}},"supported_versions":{"type":"array","items":{"type":"integer"}},"retry":{"$ref":"#/components/schemas/RetryInfo"}},"additionalProperties":true},
+            "CoordinatorDiscovery":{"type":"object","required":["schema","api_root","supported_versions","supported_media_types"],"properties":{"schema":{"const":"facts-protocol-coordinator-discovery-v0"},"coordinator_assertion":{"$ref":"#/components/schemas/Base64Url"},"api_root":{"type":"string","format":"uri"},"openapi":{"type":"string"},"supported_versions":{"type":"array","items":{"type":"integer"}},"supported_media_types":{"type":"array","items":{"type":"string"}},"deployment_profile":{"type":"object"}},"additionalProperties":true},
+            "LedgerList":{"type":"object","required":["schema","ledgers","next_cursor"],"properties":{"schema":{"const":"facts-protocol-ledger-list-v0"},"ledgers":{"type":"array","items":{"type":"object"}},"next_cursor":{"type":["string","null"]}},"additionalProperties":false},
+            "LedgerMetadata":{"type":"object","required":["schema","ledger_id","genesis_hash"],"properties":{"schema":{"const":"facts-protocol-ledger-metadata-v0"},"ledger_id":{"$ref":"#/components/schemas/UuidV7"},"genesis_hash":{"$ref":"#/components/schemas/Sha256Hash"},"genesis":{"$ref":"#/components/schemas/WireObjectRef"},"namespace_assertions":{"type":"array","items":{"$ref":"#/components/schemas/WireObjectRef"}},"latest_commitment":{"type":"object"},"coordinator_assertion":{"type":"object"}},"additionalProperties":true},
+            "ObjectList":{"type":"object","required":["schema","objects","next_cursor"],"properties":{"schema":{"const":"facts-protocol-object-list-v0"},"objects":{"type":"array","items":{"$ref":"#/components/schemas/WireObjectRef"}},"next_cursor":{"type":["string","null"]}},"additionalProperties":false},
+            "CommitmentResponse":{"type":"object","properties":{"schema":{"type":"string"},"commitment":{"$ref":"#/components/schemas/Base64Url"},"commitment_hash":{"$ref":"#/components/schemas/Sha256Hash"},"signed_commitment":{"$ref":"#/components/schemas/Base64Url"}},"additionalProperties":true},
+            "Proof":{"type":"object","required":["schema","ledger_id","content_hash","proof_type"],"properties":{"schema":{"const":"facts-protocol-proof-v0"},"ledger_id":{"$ref":"#/components/schemas/UuidV7"},"content_hash":{"$ref":"#/components/schemas/Sha256Hash"},"proof_type":{"enum":["inclusion","non-inclusion"]}},"additionalProperties":true},
+            "DispositionResponse":{"type":"object","required":["schema","disposition"],"properties":{"schema":{"const":"facts-protocol-disposition-response-v0"},"disposition":{"$ref":"#/components/schemas/Base64Url"}},"additionalProperties":false},
+            "FetchResponse":{"type":"object","required":["schema","objects"],"properties":{"schema":{"const":"facts-protocol-fetch-response-v0"},"objects":{"type":"array","items":{"$ref":"#/components/schemas/WireObjectRef"}},"missing_ids":{"type":"array","items":{"$ref":"#/components/schemas/UuidV7"}},"missing_hashes":{"type":"array","items":{"$ref":"#/components/schemas/Sha256Hash"}},"not_modified":{"type":"array","items":{"$ref":"#/components/schemas/Sha256Hash"}}},"additionalProperties":false},
+            "PullResponse":{"type":"object","required":["schema","ledger_id","objects","commitment","next_cursor","complete"],"properties":{"schema":{"const":"facts-protocol-pull-response-v0"},"ledger_id":{"$ref":"#/components/schemas/UuidV7"},"objects":{"type":"array","items":{"$ref":"#/components/schemas/WireObjectRef"}},"object_count":{"type":"integer"},"commitment":{"type":"object"},"inclusion_proofs":{"type":"array","items":{"type":"object"}},"next_cursor":{"type":["string","null"]},"complete":{"type":"boolean"}},"additionalProperties":false},
+            "PushResponse":{"type":"object","required":["schema","ledger_id","results","accepted_count","rejected_count","deferred_count"],"properties":{"schema":{"const":"facts-protocol-push-response-v0"},"ledger_id":{"$ref":"#/components/schemas/UuidV7"},"bundle_id":{"anyOf":[{"$ref":"#/components/schemas/UuidV7"},{"type":"null"}]},"results":{"type":"array","items":{"type":"object"}},"accepted_count":{"type":"integer"},"rejected_count":{"type":"integer"},"deferred_count":{"type":"integer"},"commitment":{"type":["object","null"]}},"additionalProperties":false},
+            "QueryResponse":{"type":"object","required":["schema","results","next_cursor"],"properties":{"schema":{"const":"facts-protocol-query-response-v0"},"results":{"type":"array","items":{"type":"object"}},"next_cursor":{"type":["string","null"]},"result_set_statement":{"type":"string"}},"additionalProperties":true},
+            "MerkleCompareResponse":{"type":"object","required":["schema","operation","commitment_hash","proofs"],"properties":{"schema":{"const":"facts-protocol-merkle-compare-response-v0"},"operation":{"enum":["include","exclude","difference"]},"commitment_hash":{"$ref":"#/components/schemas/Sha256Hash"},"proofs":{"type":"array","items":{"type":"object"}},"difference":{"type":["object","null"]}},"additionalProperties":false},
+            "NamespaceResponse":{"type":"object","required":["schema","namespace","assertions","resolution"],"properties":{"schema":{"const":"facts-protocol-namespace-response-v0"},"namespace":{"type":"string"},"naming_authority_actor_id":{"$ref":"#/components/schemas/UuidV7"},"assertions":{"type":"array","items":{"$ref":"#/components/schemas/WireObjectRef"}},"resolution":{"enum":["unresolved","unique","ambiguous"]}},"additionalProperties":false}
+        }
+    })
+}
+
 async fn not_found() -> Response {
     problem(
         StatusCode::NOT_FOUND,
@@ -343,7 +1707,9 @@ async fn negotiate_accept(request: Request, next: Next) -> Response {
         );
     };
     let path = request.uri().path();
-    let supported: &[&str] = if path.ends_with("/objects:pull") {
+    let supported: &[&str] = if path.ends_with("/openapi.json") {
+        &["application/json"]
+    } else if path.ends_with("/objects:pull") || path.ends_with("/object-pulls") {
         &[JSON_MEDIA, SNAPSHOT_MEDIA]
     } else if path.contains("/objects/") && !path.contains(":") {
         &[COSE_MEDIA]
@@ -506,10 +1872,14 @@ async fn caller_authentication(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
-    let push = request.method() == http::Method::POST && path.ends_with("/objects:push");
+    let push = request.method() == http::Method::POST
+        && (path.ends_with("/objects:push") || path.ends_with("/object-pushes"));
     let restricted_read = (request.method() == http::Method::POST
         && (path.ends_with("/objects:pull")
+            || path.ends_with("/object-pulls")
             || path.ends_with("/query")
+            || path.ends_with("/queries")
+            || path.ends_with("/merkle-comparisons")
             || path.ends_with("/merkle:compare")))
         || (request.method() == http::Method::GET && path.contains("/dispositions/"));
     let private_ledger = ledger_from_path(path)
@@ -519,6 +1889,11 @@ async fn caller_authentication(
         || private_ledger;
     if !requires_auth {
         return next.run(request).await;
+    }
+    match verify_bearer_token(&state, &request) {
+        Ok(Some(_actor)) => return next.run(request).await,
+        Ok(None) => {}
+        Err(_) => return authentication_challenge(&state, "authentication-failed"),
     }
     match verify_http_signature(&state, &request) {
         Ok(()) => next.run(request).await,
@@ -542,6 +1917,31 @@ enum AuthFailure {
     Failed,
 }
 
+fn verify_bearer_token(
+    state: &AppState,
+    request: &Request,
+) -> Result<Option<AuthenticatedActor>, BearerTokenError> {
+    let Some(value) = request.headers().get(header::AUTHORIZATION) else {
+        return Ok(None);
+    };
+    let Some(token) = value
+        .to_str()
+        .ok()
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|token| !token.is_empty())
+    else {
+        return Err(BearerTokenError::Invalid);
+    };
+    state
+        .bearer_tokens
+        .authenticate(
+            &token_hash(token),
+            ledger_from_path(request.uri().path()),
+            OffsetDateTime::now_utc(),
+        )
+        .map(Some)
+}
+
 fn authentication_challenge(state: &AppState, code: &str) -> Response {
     let nonce = base64url_encode(&rand::random::<[u8; 32]>());
     state.nonces.lock().unwrap().insert(
@@ -554,6 +1954,10 @@ fn authentication_challenge(state: &AppState, code: &str) -> Response {
         "caller authentication is required",
     );
     response.headers_mut().insert(
+        "www-authenticate",
+        HeaderValue::from_static("Bearer realm=\"facts\""),
+    );
+    response.headers_mut().append(
         "www-authenticate",
         HeaderValue::try_from(format!(
             "Signature realm=\"facts\", nonce=\"{nonce}\", algs=\"ed25519\""
@@ -791,6 +2195,9 @@ fn ledger_sync(state: AppState, ledger: String) -> Response {
             )
         }
     };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger_bytes) else {
+        return ledger_not_found();
+    };
     let ledger_text = uuid::Uuid::from_bytes(ledger_bytes).to_string();
     let guard = state.store.lock().unwrap();
     match guard.get_ledger_metadata(&ledger_bytes) {
@@ -942,6 +2349,13 @@ fn digest(body: &[u8]) -> HeaderValue {
     let value = format!("sha-256=:{}:", base64_encode(&h.finalize()));
     HeaderValue::try_from(value).unwrap()
 }
+
+fn token_hash(token: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(token.as_bytes());
+    base64url_encode(&h.finalize())
+}
+
 fn base64_encode(bytes: &[u8]) -> String {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
@@ -951,12 +2365,16 @@ fn base64_encode(bytes: &[u8]) -> String {
             | chunk.get(2).copied().unwrap_or(0) as u32;
         out.push(T[(n >> 18 & 63) as usize] as char);
         out.push(T[(n >> 12 & 63) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(T[(n >> 6 & 63) as usize] as char)
-        }
-        if chunk.len() > 2 {
-            out.push(T[(n & 63) as usize] as char)
-        }
+        out.push(if chunk.len() > 1 {
+            T[(n >> 6 & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -1047,6 +2465,7 @@ async fn discovery(State(state): State<AppState>) -> Response {
         "schema":"facts-protocol-coordinator-discovery-v0",
         "coordinator_assertion":base64url_encode(&signed_assertion),
         "api_root":state.api_root,
+        "openapi":format!("{}/openapi.json", state.api_root.trim_end_matches('/')),
         "supported_versions":[0],
         "supported_media_types":[JSON_MEDIA],
         "deployment_profile":{
@@ -1062,7 +2481,7 @@ async fn discovery(State(state): State<AppState>) -> Response {
             "accepted_content_encodings":["identity","gzip"],
             "caller_authentication":"deployment-policy",
             "per_ledger_visibility":"coordinator-policy",
-            "header_timeout_enforced_by":"serve_reference"
+            "request_header_timeout_enforcement":"connection-layer"
         }
     }))
 }
@@ -1108,54 +2527,76 @@ async fn ledgers(State(state): State<AppState>) -> Response {
 }
 
 fn ledgers_sync(state: AppState) -> Response {
-    let guard = state.store.lock().unwrap();
-    match guard.list_ledger_metadata() {
-        Ok(items) => {
-            let ledgers = items
-                .into_iter()
-                .filter(|(id, _, _)| {
-                    uuid_bytes(id)
-                        .ok()
-                        .is_none_or(|ledger| state.ledger_visibility(&ledger).is_public())
-                })
-                .map(|(id, namespace, genesis_hash)| {
-                    let latest_commitment_hash = uuid_bytes(&id)
-                        .ok()
-                        .and_then(|ledger| guard.list_object_hashes(&ledger).ok())
-                        .and_then(|hashes| {
-                            let tree = fact_commitment::MerkleTree::new(hashes).ok()?;
-                            let created_at = guard
-                                .latest_object_created_at(&uuid_bytes(&id).ok()?)
-                                .ok()??;
-                            let body = normative_commitment_body_at(
-                                &state,
-                                &ledger_from_id(&id)?,
-                                &tree,
-                                &created_at,
-                            );
-                            let payload = canonicalize(&serde_json::to_vec(&body).ok()?).ok()?;
-                            Some(fact_core::Hash::digest(&payload).hex())
-                        });
-                    let visibility = uuid_bytes(&id)
-                        .map(|ledger| state.ledger_visibility(&ledger).as_str())
-                        .unwrap_or("public");
-                    serde_json::json!({"ledger_id":id,"genesis_hash":genesis_hash.map(|hash|hash.hex()),"namespace":namespace,"latest_commitment_hash":latest_commitment_hash,"visibility":visibility})
-                })
-                .collect::<Vec<_>>();
-            json_response(
-                serde_json::json!({"schema":"facts-protocol-ledger-list-v0","ledgers":ledgers,"next_cursor":null}),
-            )
+    let states = if state.hosted_ledgers.is_empty() {
+        vec![state.clone()]
+    } else {
+        state
+            .hosted_ledgers
+            .keys()
+            .filter_map(|ledger| state.scoped_to_ledger(ledger))
+            .collect::<Vec<_>>()
+    };
+    let mut ledgers = Vec::new();
+    let mut seen = HashSet::new();
+    for scoped in states {
+        let guard = scoped.store.lock().unwrap();
+        let items = match guard.list_ledger_metadata() {
+            Ok(items) => items,
+            Err(e) => {
+                return problem(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "coordinator-error",
+                    &e.to_string(),
+                )
+            }
+        };
+        for (id, namespace, genesis_hash) in items {
+            let Ok(ledger) = uuid_bytes(&id) else {
+                continue;
+            };
+            if !scoped.hosted_ledgers.is_empty() && !scoped.hosted_ledgers.contains_key(&ledger) {
+                continue;
+            }
+            if !state.ledger_visibility(&ledger).is_public() || !seen.insert(ledger) {
+                continue;
+            }
+            let latest_commitment_hash =
+                guard.list_object_hashes(&ledger).ok().and_then(|hashes| {
+                    let tree = fact_commitment::MerkleTree::new(hashes).ok()?;
+                    let created_at = guard.latest_object_created_at(&ledger).ok()??;
+                    let body = normative_commitment_body_at(
+                        &scoped,
+                        &ledger_from_id(&id)?,
+                        &tree,
+                        &created_at,
+                    );
+                    let payload = canonicalize(&serde_json::to_vec(&body).ok()?).ok()?;
+                    Some(fact_core::Hash::digest(&payload).hex())
+                });
+            let visibility = state.ledger_visibility(&ledger).as_str();
+            ledgers.push(serde_json::json!({"ledger_id":id,"genesis_hash":genesis_hash.map(|hash|hash.hex()),"namespace":namespace,"latest_commitment_hash":latest_commitment_hash,"visibility":visibility}));
         }
-        Err(e) => problem(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "coordinator-error",
-            &e.to_string(),
-        ),
     }
+    ledgers.sort_by(|left, right| left["ledger_id"].as_str().cmp(&right["ledger_id"].as_str()));
+    json_response(
+        serde_json::json!({"schema":"facts-protocol-ledger-list-v0","ledgers":ledgers,"next_cursor":null}),
+    )
 }
 
 fn ledger_from_id(id: &str) -> Option<fact_core::ObjectId> {
     id.parse().ok()
+}
+
+fn scoped_state_for_ledger(state: &AppState, ledger: &[u8; 16]) -> Option<AppState> {
+    state.scoped_to_ledger(ledger)
+}
+
+fn ledger_not_found() -> Response {
+    problem(
+        StatusCode::NOT_FOUND,
+        "ledger-not-found",
+        "ledger is not visible",
+    )
 }
 
 fn commitment_body(
@@ -1280,105 +2721,112 @@ async fn namespace(
 }
 
 fn namespace_sync(state: AppState, normalized_namespace: String) -> Response {
-    let guard = state.store.lock().unwrap();
-    match guard.list_ledger_metadata() {
-        Ok(items) => {
-            let matching = items
-                .into_iter()
-                .filter(|(id, namespace, _)| {
-                    namespace == &normalized_namespace
-                        && uuid_bytes(id)
-                            .ok()
-                            .is_none_or(|ledger| state.ledger_visibility(&ledger).is_public())
-                })
-                .collect::<Vec<_>>();
-            if matching.is_empty() {
-                problem(
-                    StatusCode::NOT_FOUND,
-                    "namespace-not-found",
-                    "namespace is not visible",
+    let states = if state.hosted_ledgers.is_empty() {
+        vec![state.clone()]
+    } else {
+        state
+            .hosted_ledgers
+            .keys()
+            .filter_map(|ledger| state.scoped_to_ledger(ledger))
+            .collect::<Vec<_>>()
+    };
+    let mut assertions = Vec::new();
+    let mut authorities = Vec::new();
+    let mut targets = HashSet::new();
+    let mut matched = false;
+    let mut fallback_authority = state.coordinator_actor_id.to_string();
+    for scoped in states {
+        let guard = scoped.store.lock().unwrap();
+        let items = match guard.list_ledger_metadata() {
+            Ok(items) => items,
+            Err(error) => {
+                return problem(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "coordinator-error",
+                    &error.to_string(),
                 )
-            } else {
-                let mut assertions = Vec::new();
-                let mut authorities = Vec::new();
-                let mut targets = HashSet::new();
-                for (ledger_id, _, _) in matching {
-                    let Ok(ledger_bytes) = uuid_bytes(&ledger_id) else {
-                        continue;
-                    };
-                    let Ok(rows) =
-                        guard.list_object_payloads_by_type(&ledger_bytes, "namespace_assertion")
-                    else {
-                        continue;
-                    };
-                    for row in rows {
-                        let Ok(Some(bytes)) =
-                            guard.get_cose_by_id(&ledger_bytes, row.object_id.as_bytes())
-                        else {
-                            continue;
-                        };
-                        if let Ok(value) = fact_crypto::decode_sign1(&bytes)
-                            .ok()
-                            .and_then(|cose| {
-                                serde_json::from_slice::<serde_json::Value>(&cose.payload).ok()
-                            })
-                            .ok_or(())
+            }
+        };
+        for (ledger_id, namespace, _) in items {
+            let Ok(ledger_bytes) = uuid_bytes(&ledger_id) else {
+                continue;
+            };
+            if namespace != normalized_namespace
+                || !state.ledger_visibility(&ledger_bytes).is_public()
+                || (!state.hosted_ledgers.is_empty()
+                    && !state.hosted_ledgers.contains_key(&ledger_bytes))
+            {
+                continue;
+            }
+            matched = true;
+            fallback_authority = scoped.coordinator_actor_id.to_string();
+            let Ok(rows) = guard.list_object_payloads_by_type(&ledger_bytes, "namespace_assertion")
+            else {
+                continue;
+            };
+            for row in rows {
+                let Ok(Some(bytes)) = guard.get_cose_by_id(&ledger_bytes, row.object_id.as_bytes())
+                else {
+                    continue;
+                };
+                if let Some(value) = fact_crypto::decode_sign1(&bytes).ok().and_then(|cose| {
+                    serde_json::from_slice::<serde_json::Value>(&cose.payload).ok()
+                }) {
+                    if let Some(body) = value.get("body") {
+                        if let Some(actor) = body
+                            .get("naming_authority_actor_id")
+                            .and_then(serde_json::Value::as_str)
                         {
-                            if let Some(body) = value.get("body") {
-                                if let Some(actor) = body
-                                    .get("naming_authority_actor_id")
-                                    .and_then(serde_json::Value::as_str)
-                                {
-                                    authorities.push(actor.to_owned());
-                                }
-                                if let Some(target) =
-                                    body.get("target_id").and_then(serde_json::Value::as_str)
-                                {
-                                    targets.insert(target.to_owned());
-                                }
-                            }
+                            authorities.push(actor.to_owned());
                         }
-                        if let Ok(wire) = wire_object(&bytes) {
-                            assertions.push(wire);
+                        if let Some(target) =
+                            body.get("target_id").and_then(serde_json::Value::as_str)
+                        {
+                            targets.insert(target.to_owned());
                         }
                     }
                 }
-                assertions.sort_by(|a, b| {
-                    a.get("content_hash")
-                        .and_then(serde_json::Value::as_str)
-                        .cmp(&b.get("content_hash").and_then(serde_json::Value::as_str))
-                });
-                authorities.sort();
-                let resolution = if assertions.is_empty() {
-                    "unresolved"
-                } else if targets.len() <= 1 {
-                    "unique"
-                } else {
-                    "ambiguous"
-                };
-                json_response(serde_json::json!({
-                    "schema":"facts-protocol-namespace-response-v0",
-                    "namespace":normalized_namespace,
-                    "naming_authority_actor_id":authorities.first()
-                        .cloned()
-                        .unwrap_or_else(|| state.coordinator_actor_id.to_string()),
-                    "assertions":assertions,
-                    "resolution":resolution
-                }))
+                if let Ok(wire) = wire_object(&bytes) {
+                    assertions.push(wire);
+                }
             }
         }
-        Err(error) => problem(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "coordinator-error",
-            &error.to_string(),
-        ),
     }
+    if !matched {
+        return problem(
+            StatusCode::NOT_FOUND,
+            "namespace-not-found",
+            "namespace is not visible",
+        );
+    }
+    assertions.sort_by(|a, b| {
+        a.get("content_hash")
+            .and_then(serde_json::Value::as_str)
+            .cmp(&b.get("content_hash").and_then(serde_json::Value::as_str))
+    });
+    authorities.sort();
+    let resolution = if assertions.is_empty() {
+        "unresolved"
+    } else if targets.len() <= 1 {
+        "unique"
+    } else {
+        "ambiguous"
+    };
+    json_response(serde_json::json!({
+        "schema":"facts-protocol-namespace-response-v0",
+        "namespace":normalized_namespace,
+        "naming_authority_actor_id":authorities.first()
+            .cloned()
+            .unwrap_or(fallback_authority),
+        "assertions":assertions,
+        "resolution":resolution
+    }))
 }
-async fn object_by_id(
+async fn object_by_ref(
     State(state): State<AppState>,
-    Path((ledger, id)): Path<(String, String)>,
+    Path((ledger, object_ref)): Path<(String, String)>,
 ) -> Response {
-    match tokio::task::spawn_blocking(move || object_by_id_sync(state, ledger, id)).await {
+    match tokio::task::spawn_blocking(move || object_by_ref_sync(state, ledger, object_ref)).await {
         Ok(response) => response,
         Err(error) => problem(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1388,7 +2836,7 @@ async fn object_by_id(
     }
 }
 
-fn object_by_id_sync(state: AppState, ledger: String, id: String) -> Response {
+fn object_by_ref_sync(state: AppState, ledger: String, object_ref: String) -> Response {
     let ledger = match uuid_bytes(&ledger) {
         Ok(x) => x,
         Err(_) => {
@@ -1399,19 +2847,23 @@ fn object_by_id_sync(state: AppState, ledger: String, id: String) -> Response {
             )
         }
     };
-    let ledger_text = uuid::Uuid::from_bytes(ledger).to_string();
-    let id = match uuid_bytes(&id) {
-        Ok(x) => x,
-        Err(_) => {
-            return problem(
-                StatusCode::BAD_REQUEST,
-                "invalid-identifier",
-                "object_id must be UUIDv7",
-            )
-        }
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
     };
+    let ledger_text = uuid::Uuid::from_bytes(ledger).to_string();
     let guard = state.store.lock().unwrap();
-    match guard.get_cose_by_id(&ledger, &id) {
+    let object = if let Ok(id) = uuid_bytes(&object_ref) {
+        guard.get_cose_by_id(&ledger, &id)
+    } else if let Ok(hash) = fact_core::Hash::from_str(&object_ref) {
+        guard.get_cose_by_hash(&ledger, &hash)
+    } else {
+        return problem(
+            StatusCode::BAD_REQUEST,
+            "invalid-identifier",
+            "object_ref must be a UUIDv7 object ID or lowercase SHA-256 hash",
+        );
+    };
+    match object {
         Ok(Some(bytes)) => {
             let mut headers = version_headers(HeaderMap::new(), COSE_MEDIA, &bytes);
             headers.insert("facts-ledger", HeaderValue::from_str(&ledger_text).unwrap());
@@ -1454,6 +2906,9 @@ fn disposition_sync(state: AppState, ledger: String, object_id: String) -> Respo
                 "ledger_id must be UUIDv7",
             )
         }
+    };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
     };
     let object_id = match uuid_bytes(&object_id) {
         Ok(value) => value,
@@ -1564,6 +3019,9 @@ fn objects_sync(state: AppState, ledger: String) -> Response {
             )
         }
     };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
+    };
     let ledger_text = uuid::Uuid::from_bytes(ledger).to_string();
     let guard = state.store.lock().unwrap();
     match guard.list_object_summaries_page(&ledger, None, MAX_OBJECT_LIST_PAGE_SIZE + 1) {
@@ -1620,6 +3078,9 @@ fn latest_commitment_sync(state: AppState, ledger: String) -> Response {
                 "ledger_id must be UUIDv7",
             )
         }
+    };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger_bytes) else {
+        return ledger_not_found();
     };
     let guard = state.store.lock().unwrap();
     let hashes = match guard.list_object_hashes(&ledger_bytes) {
@@ -1714,6 +3175,9 @@ fn commitment_sync(state: AppState, ledger: String) -> Response {
             )
         }
     };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
+    };
     let ledger_text = uuid::Uuid::from_bytes(ledger).to_string();
     let guard = state.store.lock().unwrap();
     let hashes = match guard.list_object_hashes(&ledger) {
@@ -1794,6 +3258,9 @@ fn proof_sync(state: AppState, ledger: String, hash: String) -> Response {
                 "ledger_id must be UUIDv7",
             )
         }
+    };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
     };
     let hash = match fact_core::Hash::from_str(&hash) {
         Ok(hash) => hash,
@@ -1902,6 +3369,9 @@ fn merkle_compare_sync(
                 "ledger_id must be UUIDv7",
             )
         }
+    };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
     };
     if let Some(response) = require_matching_ledger_header(&headers, &ledger) {
         return response;
@@ -2152,62 +3622,6 @@ fn merkle_compare_sync(
     )
 }
 
-async fn object_by_hash(
-    State(state): State<AppState>,
-    Path((ledger, hash)): Path<(String, String)>,
-) -> Response {
-    match tokio::task::spawn_blocking(move || object_by_hash_sync(state, ledger, hash)).await {
-        Ok(response) => response,
-        Err(error) => problem(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "coordinator-error",
-            &format!("read task failed: {error}"),
-        ),
-    }
-}
-
-fn object_by_hash_sync(state: AppState, ledger: String, hash: String) -> Response {
-    let ledger = match uuid_bytes(&ledger) {
-        Ok(x) => x,
-        Err(_) => {
-            return problem(
-                StatusCode::BAD_REQUEST,
-                "invalid-identifier",
-                "ledger_id must be UUIDv7",
-            )
-        }
-    };
-    let hash = match fact_core::Hash::from_str(&hash) {
-        Ok(x) => x,
-        Err(_) => {
-            return problem(
-                StatusCode::BAD_REQUEST,
-                "invalid-identifier",
-                "hash must be SHA-256",
-            )
-        }
-    };
-    let ledger_text = uuid::Uuid::from_bytes(ledger).to_string();
-    let guard = state.store.lock().unwrap();
-    match guard.get_cose_by_hash(&ledger, &hash) {
-        Ok(Some(bytes)) => {
-            let mut headers = version_headers(HeaderMap::new(), COSE_MEDIA, &bytes);
-            headers.insert("facts-ledger", HeaderValue::from_str(&ledger_text).unwrap());
-            (StatusCode::OK, headers, bytes).into_response()
-        }
-        Ok(None) => problem(
-            StatusCode::NOT_FOUND,
-            "object-not-found",
-            "object is not visible",
-        ),
-        Err(e) => problem(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "coordinator-error",
-            &e.to_string(),
-        ),
-    }
-}
-
 async fn fetch_objects(
     State(state): State<AppState>,
     Path(ledger): Path<String>,
@@ -2262,6 +3676,9 @@ fn fetch_objects_sync(
                 "ledger_id must be UUIDv7",
             )
         }
+    };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
     };
     if let Some(response) = require_matching_ledger_header(&headers, &ledger) {
         return response;
@@ -2513,6 +3930,9 @@ fn pull_objects_sync(state: AppState, ledger: String, headers: HeaderMap, body: 
             )
         }
     };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
+    };
     if let Some(response) = require_matching_ledger_header(&headers, &ledger) {
         return response;
     }
@@ -2688,6 +4108,36 @@ fn pull_objects_sync(state: AppState, ledger: String, headers: HeaderMap, body: 
             "known_commitment_hash does not match the current commitment",
         );
     }
+    let protected = fact_crypto::coordinator_protected(
+        state.coordinator_key.public_key(),
+        "commitment",
+        "0",
+        Some(ledger),
+    );
+    let signed = fact_crypto::encode_sign1(&fact_crypto::sign1(
+        &protected,
+        &payload,
+        &state.coordinator_key,
+    ));
+    let commitment = serde_json::json!({
+        "commitment":base64url_encode(&signed),
+        "commitment_hash":current_commitment_hash.hex()
+    });
+    if known_commitment == Some(current_commitment_hash) && object["cursor"].is_null() {
+        return json_with_headers(
+            StatusCode::OK,
+            serde_json::json!({
+                "schema":"facts-protocol-pull-response-v0",
+                "ledger_id":uuid::Uuid::from_bytes(ledger),
+                "objects":[],
+                "object_count":0,
+                "commitment":commitment,
+                "inclusion_proofs":[],
+                "next_cursor":null,
+                "complete":true
+            }),
+        );
+    }
     if object["prefer_snapshot"].as_bool() == Some(true) && !object["cursor"].is_null() {
         return problem(
             StatusCode::BAD_REQUEST,
@@ -2731,10 +4181,46 @@ fn pull_objects_sync(state: AppState, ledger: String, headers: HeaderMap, body: 
     } else {
         0
     };
+    let root_rows = match guard.list_object_summaries(&ledger) {
+        Ok(rows) => rows,
+        Err(error) => {
+            return problem(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "coordinator-error",
+                &error.to_string(),
+            )
+        }
+    };
+    let root_ids = root_rows
+        .into_iter()
+        .map(|row| row.object_id)
+        .collect::<Vec<_>>();
+    let mut pull_rows = match guard.list_dependency_closure_for_objects(&root_ids) {
+        Ok(rows) => rows,
+        Err(error) => {
+            return problem(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "coordinator-error",
+                &error.to_string(),
+            )
+        }
+    };
+    match guard.list_identity_objects() {
+        Ok(rows) => pull_rows.extend(rows),
+        Err(error) => {
+            return problem(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "coordinator-error",
+                &error.to_string(),
+            )
+        }
+    }
+    pull_rows.sort_by_key(|(_, hash, _)| *hash);
+    pull_rows.dedup_by_key(|(_, hash, _)| *hash);
     let mut missing = Vec::new();
-    for hash in &current_tree.leaves {
-        if known.binary_search(hash).is_err() {
-            match guard.get_cose_by_hash(&ledger, hash) {
+    for (_, hash, _) in pull_rows {
+        if known.binary_search(&hash).is_err() {
+            match guard.get_cose_by_hash_any(&hash) {
                 Ok(Some(bytes)) => missing.push(bytes),
                 Ok(None) => {}
                 Err(error) => {
@@ -2747,11 +4233,6 @@ fn pull_objects_sync(state: AppState, ledger: String, headers: HeaderMap, body: 
             }
         }
     }
-    missing.sort_by_key(|bytes| {
-        fact_crypto::decode_sign1(bytes)
-            .map(|cose| fact_core::Hash::digest(&cose.payload))
-            .unwrap_or_else(|_| fact_core::Hash::digest(bytes))
-    });
     if cursor_offset > missing.len() {
         return problem(
             StatusCode::BAD_REQUEST,
@@ -2868,21 +4349,6 @@ fn pull_objects_sync(state: AppState, ledger: String, headers: HeaderMap, body: 
         );
         return (StatusCode::OK, headers, snapshot).into_response();
     }
-    let protected = fact_crypto::coordinator_protected(
-        state.coordinator_key.public_key(),
-        "commitment",
-        "0",
-        Some(ledger),
-    );
-    let signed = fact_crypto::encode_sign1(&fact_crypto::sign1(
-        &protected,
-        &payload,
-        &state.coordinator_key,
-    ));
-    let commitment = serde_json::json!({
-        "commitment":base64url_encode(&signed),
-        "commitment_hash":fact_core::Hash::digest(&payload).hex()
-    });
     let next_cursor = if complete {
         serde_json::Value::Null
     } else {
@@ -2983,6 +4449,9 @@ fn query_sync(state: AppState, ledger: String, headers: HeaderMap, body: Bytes) 
                 "ledger_id must be UUIDv7",
             )
         }
+    };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
     };
     if let Some(response) = require_matching_ledger_header(&headers, &ledger) {
         return response;
@@ -3985,6 +5454,9 @@ fn push_sync(state: AppState, ledger: String, headers: HeaderMap, body: Bytes) -
             )
         }
     };
+    let Some(state) = scoped_state_for_ledger(&state, &ledger) else {
+        return ledger_not_found();
+    };
     if let Some(response) = require_matching_ledger_header(&headers, &ledger) {
         return response;
     }
@@ -4016,7 +5488,14 @@ fn push_sync(state: AppState, ledger: String, headers: HeaderMap, body: Bytes) -
             }
         };
         let hash = fact_core::Hash::digest(&cose.payload);
-        match guard.get_cose_by_hash(&ledger, &hash) {
+        let existing = match object_ledger_id(object) {
+            Ok(Some(_)) => guard.get_cose_by_hash(&ledger, &hash),
+            Ok(None) => guard.get_cose_by_hash_any(&hash),
+            Err(error) => {
+                return problem(StatusCode::BAD_REQUEST, "malformed-request", &error);
+            }
+        };
+        match existing {
             Ok(Some(existing)) if existing == *object => hashes[index] = Some(hash),
             Ok(Some(_)) => {
                 return problem(
@@ -4271,21 +5750,24 @@ fn timestamp_now() -> String {
     )
 }
 fn verify_ledger(ledger: &[u8; 16], object: &[u8]) -> Result<(), String> {
+    if let Some(object_ledger) = object_ledger_id(object)? {
+        if &object_ledger != ledger {
+            return Err("ledger mismatch".into());
+        }
+    }
+    Ok(())
+}
+
+fn object_ledger_id(object: &[u8]) -> Result<Option<[u8; 16]>, String> {
     let cose = fact_crypto::decode_sign1(object).map_err(|error| error.to_string())?;
     let value: serde_json::Value =
         serde_json::from_slice(&cose.payload).map_err(|error| error.to_string())?;
-    if value
+    value
         .get("ledger_id")
         .and_then(|v| v.as_str())
         .map(|s| uuid_bytes(s))
         .transpose()
-        .map_err(|error| error.to_string())?
-        .as_ref()
-        != Some(ledger)
-    {
-        return Err("ledger mismatch".into());
-    }
-    Ok(())
+        .map_err(|error| error.to_string())
 }
 fn json_with_headers(status: StatusCode, value: serde_json::Value) -> Response {
     let body = json_body(value);
@@ -4326,6 +5808,337 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tower::ServiceExt;
 
+    #[test]
+    fn content_digest_matches_sdk_wire_format() {
+        let body = br#"{"schema":"facts-protocol-pull-v0","known_object_hashes":[]}"#;
+        assert_eq!(
+            digest(body).to_str().unwrap(),
+            "sha-256=:yZbMUmAbzFKJjTCcPBkmFatBw31ierx78IUw1nCEwkE=:"
+        );
+        assert!(digest(body).to_str().unwrap().ends_with("=:"));
+    }
+
+    fn test_object_dependency(cose_bytes: &[u8], role: &str) -> serde_json::Value {
+        let cose = fact_crypto::decode_sign1(cose_bytes).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&cose.payload).unwrap();
+        serde_json::json!({
+            "object_id":value["id"],
+            "content_hash":fact_core::Hash::digest(&cose.payload).hex(),
+            "role":role
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn test_signed_envelope(
+        id: uuid::Uuid,
+        ledger: uuid::Uuid,
+        object_type: &str,
+        actor: uuid::Uuid,
+        key_id: uuid::Uuid,
+        key: &SigningKey,
+        dependencies: Vec<serde_json::Value>,
+        body: serde_json::Value,
+    ) -> Vec<u8> {
+        let value = serde_json::json!({
+            "id":id,
+            "ledger_id":ledger,
+            "object_type":object_type,
+            "schema_version":"0",
+            "actor_id":actor,
+            "signing_key_id":key_id,
+            "created_at":"2026-07-30T12:00:00.000Z",
+            "dependencies":dependencies,
+            "body":body
+        });
+        let payload = canonicalize(&serde_json::to_vec(&value).unwrap()).unwrap();
+        let protected = fact_crypto::protocol_protected(
+            key.public_key(),
+            object_type,
+            "0",
+            Some(*ledger.as_bytes()),
+        );
+        encode_sign1(&sign1(&protected, &payload, key))
+    }
+
+    fn insert_accepted_test_proposition(
+        store: &Store,
+        bootstrap: &fact_store::BootstrapResult,
+        seed: [u8; 32],
+        markdown: &[u8],
+    ) -> uuid::Uuid {
+        let key = SigningKey::from_seed(&seed).unwrap();
+        let ledger = bootstrap.ledger_id;
+        let actor = bootstrap.actor_id;
+        let key_id = bootstrap.key_id;
+        let admin_authority = bootstrap
+            .cose_objects
+            .iter()
+            .find(|bytes| {
+                let cose = fact_crypto::decode_sign1(bytes).unwrap();
+                let value: serde_json::Value = serde_json::from_slice(&cose.payload).unwrap();
+                value["object_type"] == "authorization_grant"
+            })
+            .map(|bytes| test_object_dependency(bytes, "admin-authority"))
+            .unwrap();
+
+        let authority_id = uuid::Uuid::now_v7();
+        let authority = test_signed_envelope(
+            authority_id,
+            ledger,
+            "authorization_grant",
+            actor,
+            key_id,
+            &key,
+            vec![admin_authority],
+            serde_json::json!({
+                "grant_id":authority_id,
+                "granting_actor_id":actor,
+                "receiving_actor_id":actor,
+                "capabilities":["accept","archive","comment","deliberate","invite","propose","reject","withdraw"],
+                "scope":{"type":"ledger"},
+                "validity":null,
+                "constraints":{},
+                "predecessor_grant_id":null
+            }),
+        );
+        let authority_dependency = test_object_dependency(&authority, "authority");
+
+        let proposition_id = uuid::Uuid::now_v7();
+        let revision_id = uuid::Uuid::now_v7();
+        let deliberation_id = uuid::Uuid::now_v7();
+        let proposition = test_signed_envelope(
+            proposition_id,
+            ledger,
+            "proposition",
+            actor,
+            key_id,
+            &key,
+            vec![serde_json::json!({
+                "object_id":authority_id,
+                "content_hash":authority_dependency["content_hash"],
+                "role":"propose-authority"
+            })],
+            serde_json::json!({
+                "proposition_id":proposition_id,
+                "purpose":"knowledge",
+                "initial_revision_id":revision_id,
+                "initial_deliberation_id":deliberation_id
+            }),
+        );
+        let proposition_dependency = test_object_dependency(&proposition, "proposition");
+        let content = serde_json::json!({
+            "media_type":"text/markdown; charset=utf-8; variant=fact-v0",
+            "bytes":base64url_encode(markdown),
+            "hash":fact_core::Hash::digest(markdown).hex()
+        });
+        let revision = test_signed_envelope(
+            revision_id,
+            ledger,
+            "revision",
+            actor,
+            key_id,
+            &key,
+            vec![proposition_dependency.clone()],
+            serde_json::json!({
+                "proposition_id":proposition_id,
+                "revision_id":revision_id,
+                "parent_revision_id":null,
+                "content":content,
+                "relationships":[],
+                "reconciliation_manifest":null
+            }),
+        );
+        let revision_dependency = test_object_dependency(&revision, "revision");
+        let deliberation = test_signed_envelope(
+            deliberation_id,
+            ledger,
+            "deliberation",
+            actor,
+            key_id,
+            &key,
+            vec![
+                proposition_dependency.clone(),
+                revision_dependency.clone(),
+                serde_json::json!({
+                    "object_id":authority_id,
+                    "content_hash":authority_dependency["content_hash"],
+                    "role":"deliberate-authority"
+                }),
+            ],
+            serde_json::json!({
+                "deliberation_id":deliberation_id,
+                "proposition_id":proposition_id,
+                "revision_id":revision_id,
+                "extends_deliberation_id":null,
+                "decision_rule":{"id":"unanimity","version":0,"parameters":{}},
+                "join_policy":{"policy_version":0,"mode":"open","attestation_requirements":[]},
+                "initial_participants":[{"actor_id":actor,"carried_decision_id":null}],
+                "roster_governance":null,
+                "opening_actor_id":actor,
+                "comments_closed_on_settlement":true
+            }),
+        );
+        let deliberation_dependency = test_object_dependency(&deliberation, "deliberation");
+        let decision_id = uuid::Uuid::now_v7();
+        let decision = test_signed_envelope(
+            decision_id,
+            ledger,
+            "decision",
+            actor,
+            key_id,
+            &key,
+            vec![
+                deliberation_dependency.clone(),
+                serde_json::json!({
+                    "object_id":authority_id,
+                    "content_hash":authority_dependency["content_hash"],
+                    "role":"accept-authority"
+                }),
+            ],
+            serde_json::json!({
+                "deliberation_id":deliberation_id,
+                "participant_actor_id":actor,
+                "value":"accepted",
+                "supersedes_decision_ids":[],
+                "authorization_ref":authority_id
+            }),
+        );
+        let decision_dependency = test_object_dependency(&decision, "decision");
+        let settlement_id = uuid::Uuid::now_v7();
+        let settlement = test_signed_envelope(
+            settlement_id,
+            ledger,
+            "settlement",
+            actor,
+            key_id,
+            &key,
+            vec![deliberation_dependency, decision_dependency.clone()],
+            serde_json::json!({
+                "deliberation_id":deliberation_id,
+                "revision_id":revision_id,
+                "decision_rule":{"id":"unanimity","version":0,"parameters":{}},
+                "decision_refs":[{
+                    "decision_id":decision_id,
+                    "participant_actor_id":actor,
+                    "content_hash":decision_dependency["content_hash"]
+                }],
+                "participant_count":1,
+                "decided_count":1,
+                "accepted_count":1,
+                "rejected_count":0,
+                "outcome":"accepted",
+                "causal_settlement_point":{"object_id":decision_id},
+                "producer_type":"participant",
+                "producer_id":actor
+            }),
+        );
+
+        store
+            .insert_verified_bundle_with_projected_mode(
+                &[
+                    authority,
+                    proposition,
+                    revision,
+                    deliberation,
+                    decision,
+                    settlement,
+                ],
+                fact_store::ProjectedMode::FullRebuild,
+            )
+            .unwrap();
+        revision_id
+    }
+
+    #[test]
+    fn openapi_spec_uses_facts_http_architecture() {
+        let spec = openapi_spec();
+        assert_eq!(spec["openapi"], "3.1.0");
+        assert_eq!(
+            spec["jsonSchemaDialect"],
+            "https://spec.openapis.org/oas/3.1/dialect/base"
+        );
+        assert!(spec["components"]["securitySchemes"]["BearerActorToken"].is_object());
+        assert_eq!(
+            spec["components"]["securitySchemes"]["BearerActorToken"]["scheme"],
+            "bearer"
+        );
+
+        let paths = spec["paths"].as_object().unwrap();
+        for path in [
+            "/ledgers/{ledger_id}/object-fetches",
+            "/ledgers/{ledger_id}/object-pulls",
+            "/ledgers/{ledger_id}/object-pushes",
+            "/ledgers/{ledger_id}/queries",
+            "/ledgers/{ledger_id}/merkle-comparisons",
+        ] {
+            assert!(paths.contains_key(path), "missing {path}");
+        }
+        for path in paths.keys() {
+            assert!(!path.contains(':'), "OpenAPI path is not noun-only: {path}");
+            assert!(
+                !path.contains("by-hash"),
+                "OpenAPI path should use object_ref, not compatibility by-hash: {path}"
+            );
+        }
+        assert_eq!(
+            spec["paths"]["/.well-known/facts"]["get"]["servers"][0]["url"],
+            "/"
+        );
+
+        assert!(paths.contains_key("/ledgers/{ledger_id}/objects/{object_ref}"));
+        assert!(!paths.contains_key("/ledgers/{ledger_id}/objects/by-hash/{hash}"));
+        let object = &spec["paths"]["/ledgers/{ledger_id}/objects/{object_ref}"]["get"]
+            ["responses"]["200"]["content"];
+        assert_eq!(object[COSE_MEDIA]["schema"]["format"], "binary");
+        assert!(object.get(JSON_MEDIA).is_none());
+
+        let pull = &spec["paths"]["/ledgers/{ledger_id}/object-pulls"]["post"]["responses"]["200"]
+            ["content"];
+        assert!(pull[JSON_MEDIA]["schema"]["allOf"].is_array());
+        assert_eq!(pull[SNAPSHOT_MEDIA]["schema"]["format"], "binary");
+
+        let push = &spec["paths"]["/ledgers/{ledger_id}/object-pushes"]["post"];
+        assert!(push["x-facts-required-capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capability| capability == "propose"));
+        assert!(push["x-facts-failure-codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|code| code == "invalid-content-digest"));
+    }
+
+    #[tokio::test]
+    async fn openapi_endpoint_returns_raw_json_document() {
+        let app = router(AppState::new_without_caller_auth(
+            Store::open_memory().unwrap(),
+            "https://example.test/facts",
+            SigningKey::from_seed(&[9u8; 32]).unwrap(),
+            fact_core::ObjectId::new_v7(),
+        ));
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/facts/openapi.json")
+                    .header("accept", "application/json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-type"], "application/json");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let spec: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(spec["openapi"], "3.1.0");
+        assert!(spec.get("schema").is_none());
+    }
+
     #[tokio::test]
     async fn reference_policy_challenges_unauthenticated_push_before_body_evaluation() {
         let store = Store::open_memory().unwrap();
@@ -4359,16 +6172,17 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        assert!(response
+        let challenges = response
             .headers()
-            .get("www-authenticate")
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.contains("nonce=\"")));
-        let challenge_nonce = response
-            .headers()
-            .get("www-authenticate")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split("nonce=\"").nth(1))
+            .get_all("www-authenticate")
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .collect::<Vec<_>>();
+        assert!(challenges.iter().any(|value| value.starts_with("Bearer ")));
+        assert!(challenges.iter().any(|value| value.contains("nonce=\"")));
+        let challenge_nonce = challenges
+            .iter()
+            .find_map(|value| value.split("nonce=\"").nth(1))
             .and_then(|value| value.split('"').next())
             .unwrap()
             .to_owned();
@@ -4440,63 +6254,162 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hosted_ledgers_keep_objects_and_commitments_isolated() {
+    async fn bearer_token_authenticates_private_ledger_access() {
         let store = Store::open_memory().unwrap();
-        let first = store
+        let bootstrap = store
             .bootstrap_ledger(
-                "first.example",
+                "bearer.example",
                 "2026-07-27T12:00:00.000Z",
-                [21u8; 32],
-                [22u8; 16],
+                [6u8; 32],
+                [7u8; 16],
             )
             .unwrap();
-        let second = store
-            .bootstrap_ledger(
-                "second.example",
-                "2026-07-27T12:00:00.000Z",
-                [23u8; 32],
-                [24u8; 16],
-            )
-            .unwrap();
-        let app = router(AppState::new_without_caller_auth(
+        let token_store = std::sync::Arc::new(InMemoryBearerTokenStore::new());
+        let issued = token_store.issue_token(
+            bootstrap.actor_id.to_string().parse().unwrap(),
+            Some(bootstrap.ledger_id.to_string().parse().unwrap()),
+            Some(OffsetDateTime::now_utc() + time::Duration::hours(1)),
+            Some("test token".into()),
+        );
+        let state = AppState::new_with_reference_policy(
             store,
             "https://example.test/facts",
-            SigningKey::from_seed(&[25u8; 32]).unwrap(),
+            SigningKey::from_seed(&[8u8; 32]).unwrap(),
             fact_core::ObjectId::new_v7(),
-        ));
-        let response = app
+        )
+        .with_bearer_token_store(token_store.clone());
+        state.set_ledger_visibility(
+            bootstrap.ledger_id.to_string().parse().unwrap(),
+            LedgerVisibility::Private,
+        );
+        let app = router(state);
+        let ledger_id = bootstrap.ledger_id;
+        let bearer = format!("Bearer {}", issued.token);
+
+        let unauthenticated = app
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri(format!(
-                        "/facts/ledgers/{}/objects/{}",
-                        first.ledger_id, second.genesis_id
-                    ))
+                    .uri(format!("/facts/ledgers/{ledger_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let response = app
+        assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+
+        let authenticated = app
+            .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/facts/ledgers")
+                    .uri(format!("/facts/ledgers/{ledger_id}"))
+                    .header("authorization", &bearer)
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        assert_eq!(authenticated.status(), StatusCode::OK);
+        assert!(token_store
+            .record_for_token(&issued.token)
+            .unwrap()
+            .last_used_at
+            .is_some());
+
+        assert!(token_store.revoke_token(&issued.token, OffsetDateTime::now_utc()));
+        let revoked = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/facts/ledgers/{ledger_id}"))
+                    .header("authorization", bearer)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
-        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let ledgers = value["body"]["ledgers"].as_array().unwrap();
-        assert_eq!(ledgers.len(), 2);
-        assert!(ledgers
-            .iter()
-            .all(|ledger| ledger["ledger_id"] != serde_json::Value::Null));
+        assert_eq!(revoked.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn file_bearer_token_store_persists_hash_only_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tokens.json");
+        let store = FileBearerTokenStore::open(&path).unwrap();
+        let actor = fact_core::ObjectId::new_v7();
+        let ledger = fact_core::ObjectId::new_v7();
+        let issued = store
+            .issue_token(
+                actor,
+                Some(ledger),
+                Some(OffsetDateTime::now_utc() + time::Duration::hours(1)),
+                Some("persisted".into()),
+            )
+            .unwrap();
+        let persisted = std::fs::read_to_string(&path).unwrap();
+        assert!(persisted.contains(&token_hash(&issued.token)));
+        assert!(!persisted.contains(&issued.token));
+
+        let reopened = FileBearerTokenStore::open(&path).unwrap();
+        let authenticated = reopened
+            .authenticate(
+                &token_hash(&issued.token),
+                Some(*ledger.uuid().as_bytes()),
+                OffsetDateTime::now_utc(),
+            )
+            .unwrap();
+        assert_eq!(authenticated.actor_id, actor);
+        assert!(reopened.records()[0].last_used_at.is_some());
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("last_used_at"));
+        assert!(!saved.contains(&issued.token));
+    }
+
+    #[test]
+    fn sqlite_bearer_token_store_hot_loads_and_revokes_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tokens.sqlite");
+        let issuer = SqliteBearerTokenStore::open(&path).unwrap();
+        let server = SqliteBearerTokenStore::open(&path).unwrap();
+        let actor = fact_core::ObjectId::new_v7();
+        let ledger = fact_core::ObjectId::new_v7();
+
+        let issued = issuer
+            .issue_token(
+                actor,
+                Some(ledger),
+                Some(OffsetDateTime::now_utc() + time::Duration::hours(1)),
+                Some("online token".into()),
+            )
+            .unwrap();
+
+        let authenticated = server
+            .authenticate(
+                &token_hash(&issued.token),
+                Some(*ledger.uuid().as_bytes()),
+                OffsetDateTime::now_utc(),
+            )
+            .unwrap();
+        assert_eq!(authenticated.actor_id, actor);
+        assert!(server.list_tokens().unwrap()[0].last_used_at.is_some());
+
+        assert!(issuer
+            .revoke_token_id(&issued.record.token_id, OffsetDateTime::now_utc())
+            .unwrap());
+        assert_eq!(
+            server.authenticate(
+                &token_hash(&issued.token),
+                Some(*ledger.uuid().as_bytes()),
+                OffsetDateTime::now_utc(),
+            ),
+            Err(BearerTokenError::Revoked)
+        );
+        assert_eq!(
+            issuer
+                .prune_expired_or_revoked(OffsetDateTime::now_utc())
+                .unwrap(),
+            1
+        );
+        assert!(server.list_tokens().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -4532,7 +6445,7 @@ mod tests {
             .unwrap()
             .parse::<uuid::Uuid>()
             .unwrap();
-        let expected_pull_count = bootstrap
+        let expected_committed_count = bootstrap
             .cose_objects
             .iter()
             .filter(|bytes| {
@@ -4545,6 +6458,7 @@ mod tests {
                     .is_some()
             })
             .count();
+        let expected_pull_count = bootstrap.cose_objects.len();
         let actor_bytes = bootstrap
             .cose_objects
             .iter()
@@ -4619,8 +6533,8 @@ mod tests {
             "coordinator-policy"
         );
         assert_eq!(
-            value["body"]["deployment_profile"]["header_timeout_enforced_by"],
-            "serve_reference"
+            value["body"]["deployment_profile"]["request_header_timeout_enforcement"],
+            "connection-layer"
         );
         let response = app
             .clone()
@@ -4794,7 +6708,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri(format!("/facts/ledgers/{}/commitment", ledger))
+                    .uri(format!("/facts/ledgers/{ledger}/commitment"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -4812,7 +6726,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri(format!("/facts/ledgers/{}/commitments/latest", ledger))
+                    .uri(format!("/facts/ledgers/{ledger}/commitments/latest"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -4896,7 +6810,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri(format!("/facts/ledgers/{}/objects/{}", ledger, id))
+                    .uri(format!("/facts/ledgers/{ledger}/objects/{id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -4905,6 +6819,22 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()["content-type"], COSE_MEDIA);
         assert_eq!(response.headers()["facts-ledger"], ledger.to_string());
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/facts/ledgers/{}/objects/{}",
+                        ledger,
+                        fact_core::Hash::digest(&canonical)
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-type"], COSE_MEDIA);
         let response = app
             .clone()
             .oneshot(
@@ -5196,8 +7126,55 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .len(),
-            expected_pull_count
+            expected_committed_count
         );
+        let current_commitment_hash = pull_value["body"]["commitment"]["commitment_hash"]
+            .as_str()
+            .unwrap();
+        let no_op_pull_body = fact_canonical::encode(
+            &serde_json::to_vec(&serde_json::json!({
+                "schema":"facts-protocol-pull-v0",
+                "scope":full_ledger_scope(&ledger),
+                "known_commitment_hash":current_commitment_hash,
+                "known_object_hashes":[],
+                "limit":1000,
+                "cursor":null,
+                "prefer_snapshot":false
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/facts/ledgers/{ledger}/object-pulls"))
+                    .header("content-type", JSON_MEDIA)
+                    .header("facts-protocol-version", VERSION)
+                    .header("content-digest", digest(&no_op_pull_body))
+                    .body(Body::from(no_op_pull_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let no_op_pull_response = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let no_op_pull_value: serde_json::Value =
+            serde_json::from_slice(&no_op_pull_response).unwrap();
+        assert_eq!(no_op_pull_value["body"]["objects"], serde_json::json!([]));
+        assert_eq!(
+            no_op_pull_value["body"]["inclusion_proofs"],
+            serde_json::json!([])
+        );
+        assert_eq!(no_op_pull_value["body"]["object_count"], 0);
+        assert_eq!(
+            no_op_pull_value["body"]["next_cursor"],
+            serde_json::Value::Null
+        );
+        assert_eq!(no_op_pull_value["body"]["complete"], true);
         let paged_pull_body = fact_canonical::encode(
             &serde_json::to_vec(&serde_json::json!({
                 "schema":"facts-protocol-pull-v0",
@@ -5233,14 +7210,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(paged["body"]["object_count"], 1);
-        assert_eq!(
-            paged["body"]["inclusion_proofs"].as_array().unwrap().len(),
-            1
-        );
-        assert_eq!(
-            paged["body"]["inclusion_proofs"][0]["schema"],
-            "facts-protocol-merkle-inclusion-proof-v0"
-        );
+        let paged_proofs = paged["body"]["inclusion_proofs"].as_array().unwrap();
+        assert!(paged_proofs.len() <= 1);
+        if let Some(proof) = paged_proofs.first() {
+            assert_eq!(proof["schema"], "facts-protocol-merkle-inclusion-proof-v0");
+        }
         assert!(!paged["body"]["complete"].as_bool().unwrap());
         let cursor = paged["body"]["next_cursor"].as_str().unwrap();
         let continuation_body = fact_canonical::encode(
@@ -5450,7 +7424,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri(format!("/facts/ledgers/{}/objects", ledger))
+                    .uri(format!("/facts/ledgers/{ledger}/objects"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -5474,7 +7448,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri(format!("/facts/ledgers/{}/objects:push", ledger))
+                    .uri(format!("/facts/ledgers/{ledger}/objects:push"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -5614,32 +7588,16 @@ mod tests {
         let database = temp.path().join("query.sqlite");
         let seed = [21; 32];
         let store = Store::open(&database).unwrap();
-        let bootstrap = fact_sdk::workflow::create_ledger(
+        let bootstrap = store
+            .bootstrap_ledger("query.example", "2026-07-30T12:00:00.000Z", seed, [22; 16])
+            .unwrap();
+        let expected_revision_id = insert_accepted_test_proposition(
             &store,
-            fact_sdk::workflow::BootstrapLedgerInput {
-                namespace: "query.example".into(),
-                created_at: "2026-07-30T12:00:00.000Z".into(),
-                seed,
-                nonce: [22; 16],
-            },
-        )
-        .unwrap();
-        let entry = fact_sdk::environment::LedgerEntry {
-            name: "query".into(),
-            ledger_id: bootstrap.ledger_id.clone(),
-            database: database.clone(),
-            actor_id: bootstrap.actor_id,
-            key_id: bootstrap.key_id,
-            seed_file: temp.path().join("seed"),
-            read_only: false,
-        };
-        let created = fact_sdk::workflow::create_proposition(
-            &entry,
-            &seed,
+            &bootstrap,
+            seed,
             b"# Queryable\n\nNeedle content.\n",
-            Some(fact_sdk::workflow::DecisionOutcome::Accepted),
         )
-        .unwrap();
+        .to_string();
         drop(store);
 
         let store = Store::open(&database).unwrap();
@@ -5649,13 +7607,13 @@ mod tests {
             SigningKey::from_seed(&[23u8; 32]).unwrap(),
             fact_core::ObjectId::new_v7(),
         ));
-        let ledger = uuid::Uuid::parse_str(&entry.ledger_id).unwrap();
+        let ledger = bootstrap.ledger_id;
         let query_body = fact_canonical::encode(
             &serde_json::to_vec(&serde_json::json!({
                 "schema":"facts-protocol-query-v0",
                 "query_type":"fact",
                 "search_text":"needle",
-                "ledger_ids":[entry.ledger_id],
+                "ledger_ids":[ledger],
                 "object_types":["revision"],
                 "scope":{"actor_ids":[],"deliberation_ids":[],"proposition_ids":[],"revision_ids":[]},
                 "status":{"accepted":null,"archived":null,"divergent":null,"rejected":null,"settled":null,"withdrawn":null},
@@ -5690,7 +7648,6 @@ mod tests {
             .await
             .unwrap();
         let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let expected_revision_id = created.revision_id.to_string();
         assert_eq!(
             value["body"]["results"][0]["object"]["object_id"].as_str(),
             Some(expected_revision_id.as_str())
@@ -5755,6 +7712,103 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn catalog_server_lists_and_routes_multiple_ledger_stores() {
+        let first_store = Store::open_memory().unwrap();
+        let first_seed = [42u8; 32];
+        let first = first_store
+            .bootstrap_ledger(
+                "first.example",
+                "2026-07-30T12:00:00.000Z",
+                first_seed,
+                [42u8; 16],
+            )
+            .unwrap();
+        let second_store = Store::open_memory().unwrap();
+        let second_seed = [43u8; 32];
+        let second = second_store
+            .bootstrap_ledger(
+                "second.example",
+                "2026-07-30T12:00:00.000Z",
+                second_seed,
+                [43u8; 16],
+            )
+            .unwrap();
+        let second_genesis_hash = second_store
+            .list_ledger_metadata()
+            .unwrap()
+            .into_iter()
+            .find(|(id, _, _)| id == &second.ledger_id.to_string())
+            .and_then(|(_, _, hash)| hash)
+            .unwrap()
+            .hex();
+        let state = AppState::new_without_caller_auth_for_ledgers(
+            "https://coordinator.example/facts",
+            vec![
+                HostedLedger {
+                    ledger_id: first.ledger_id.to_string().parse().unwrap(),
+                    store: first_store,
+                    coordinator_key: SigningKey::from_seed(&first_seed).unwrap(),
+                    coordinator_actor_id: first.actor_id.to_string().parse().unwrap(),
+                },
+                HostedLedger {
+                    ledger_id: second.ledger_id.to_string().parse().unwrap(),
+                    store: second_store,
+                    coordinator_key: SigningKey::from_seed(&second_seed).unwrap(),
+                    coordinator_actor_id: second.actor_id.to_string().parse().unwrap(),
+                },
+            ],
+        )
+        .unwrap();
+        let app = router(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/facts/ledgers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let ids = value["body"]["ledgers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|ledger| ledger["ledger_id"].as_str().unwrap().to_owned())
+            .collect::<HashSet<_>>();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&first.ledger_id.to_string()));
+        assert!(ids.contains(&second.ledger_id.to_string()));
+
+        let second_ledger_id = second.ledger_id;
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/facts/ledgers/{second_ledger_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["body"]["ledger_id"], second.ledger_id.to_string());
+        assert_eq!(value["body"]["genesis_hash"], second_genesis_hash);
+        assert!(value["body"]["latest_commitment"]["commitment_hash"]
+            .as_str()
+            .is_some());
+    }
+
+    #[tokio::test]
     async fn private_ledger_visibility_is_coordinator_policy() {
         let store = Store::open_memory().unwrap();
         let public = store
@@ -5802,10 +7856,11 @@ mod tests {
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0]["ledger_id"], public.ledger_id.to_string());
 
+        let private_ledger_id = private.ledger_id;
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(format!("/facts/ledgers/{}", private.ledger_id))
+                    .uri(format!("/facts/ledgers/{private_ledger_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -5817,11 +7872,7 @@ mod tests {
 
     #[tokio::test]
     async fn reference_listener_closes_slow_http_headers() {
-        let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
-            Ok(listener) => listener,
-            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return,
-            Err(error) => panic!("failed to bind reference listener: {error}"),
-        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let state = AppState::new_without_caller_auth(
             Store::open_memory().unwrap(),

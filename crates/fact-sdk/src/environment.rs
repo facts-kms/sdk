@@ -42,6 +42,8 @@ struct CatalogFile {
 pub struct RemoteEntry {
     pub name: String,
     pub url: String,
+    #[serde(skip_serializing)]
+    pub bearer_token: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -100,6 +102,8 @@ pub struct DeleteLedgerResult {
 #[derive(serde::Deserialize, serde::Serialize)]
 struct RemoteConfig {
     url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bearer_token: Option<String>,
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -304,6 +308,7 @@ impl UserEnvironment {
                     RemoteEntry {
                         name,
                         url: value.url,
+                        bearer_token: value.bearer_token,
                     },
                 ))
             })
@@ -327,6 +332,7 @@ impl UserEnvironment {
                         remote.name.clone(),
                         RemoteConfig {
                             url: remote.url.clone(),
+                            bearer_token: remote.bearer_token.clone(),
                         },
                     )
                 })
@@ -574,8 +580,15 @@ pub fn clone_read_only_ledger_from_objects(
     environment.ensure_dirs()?;
     let database = environment.ledger_dir.join(format!("{name}.sqlite"));
     let store = fact_store::Store::open(&database)?;
+    let (identity_objects, ledger_objects) = split_clone_objects(objects)?;
+    if !identity_objects.is_empty() {
+        store.insert_verified_bundle_with_projected_mode(
+            &identity_objects,
+            fact_store::ProjectedMode::Incremental,
+        )?;
+    }
     store.insert_authorized_bundle_with_projected_mode(
-        objects,
+        &ledger_objects,
         fact_store::ProjectedMode::Incremental,
     )?;
     let entry = LedgerEntry {
@@ -594,10 +607,39 @@ pub fn clone_read_only_ledger_from_objects(
         remotes.entry(name.to_owned()).or_insert(RemoteEntry {
             name: name.to_owned(),
             url: remote.to_owned(),
+            bearer_token: None,
         });
         environment.save_remotes(&remotes)?;
     }
     Ok(entry)
+}
+
+type CloneObjectSplit = (Vec<Vec<u8>>, Vec<Vec<u8>>);
+
+fn split_clone_objects(objects: &[Vec<u8>]) -> Result<CloneObjectSplit> {
+    let mut identity_objects = Vec::new();
+    let mut ledger_objects = Vec::new();
+    for object in objects {
+        let cose = fact_crypto::decode_sign1(object)?;
+        let canonical = fact_canonical::encode(&cose.payload)?;
+        if canonical != cose.payload {
+            return Err(Error::Validation(
+                "clone object payload is not canonical".into(),
+            ));
+        }
+        let object_type = fact_schema::validate_envelope(&canonical)?;
+        if object_type.ledger_scoped() {
+            ledger_objects.push(object.clone());
+        } else {
+            identity_objects.push(object.clone());
+        }
+    }
+    if ledger_objects.is_empty() {
+        return Err(Error::Validation(
+            "clone source does not contain ledger-scoped objects".into(),
+        ));
+    }
+    Ok((identity_objects, ledger_objects))
 }
 
 /// Register an existing Fact ledger database as a read-only local ledger.
@@ -781,6 +823,7 @@ pub fn add_remote(
         RemoteEntry {
             name: name.to_owned(),
             url: url.to_owned(),
+            bearer_token: None,
         },
     );
     environment.save_remotes(&remotes)?;
@@ -832,6 +875,7 @@ pub fn rename_remote(
         RemoteEntry {
             name: new_name.to_owned(),
             url: remote.url,
+            bearer_token: remote.bearer_token,
         },
     );
     environment.save_remotes(&remotes)?;
@@ -841,6 +885,28 @@ pub fn rename_remote(
         new_name: Some(new_name.to_owned()),
         url: None,
         scope: "local-environment".into(),
+    })
+}
+
+/// Store or replace the bearer token remembered for a configured remote.
+pub fn set_remote_bearer_token(
+    environment: &UserEnvironment,
+    name: &str,
+    bearer_token: Option<String>,
+) -> Result<RemoteMutationResult> {
+    let mut remotes = environment.load_remotes()?;
+    let remote = remotes
+        .get_mut(name)
+        .ok_or_else(|| Error::MissingObject(format!("unknown remote: {name}")))?;
+    remote.bearer_token = bearer_token;
+    let url = remote.url.clone();
+    environment.save_remotes(&remotes)?;
+    Ok(RemoteMutationResult {
+        name: name.to_owned(),
+        old_name: None,
+        new_name: None,
+        url: Some(url),
+        scope: "remote".into(),
     })
 }
 
@@ -899,6 +965,7 @@ mod tests {
             RemoteEntry {
                 name: "origin".into(),
                 url: "https://example.test".into(),
+                bearer_token: None,
             },
         );
         env.save_remotes(&remotes).unwrap();
@@ -926,6 +993,23 @@ mod tests {
         let removed = remove_remote(&env, "backup").unwrap();
         assert_eq!(removed.name, "backup");
         assert!(list_remotes(&env).unwrap().is_empty());
+
+        add_remote(&env, "auth", "https://example.test/facts").unwrap();
+        set_remote_bearer_token(&env, "auth", Some("secret-token".into())).unwrap();
+        let remote = env.load_remotes().unwrap().remove("auth").unwrap();
+        assert_eq!(remote.bearer_token.as_deref(), Some("secret-token"));
+        assert!(!serde_json::to_string(&remote)
+            .unwrap()
+            .contains("secret-token"));
+        set_remote_bearer_token(&env, "auth", None).unwrap();
+        assert_eq!(
+            env.load_remotes()
+                .unwrap()
+                .remove("auth")
+                .unwrap()
+                .bearer_token,
+            None
+        );
     }
 
     #[test]

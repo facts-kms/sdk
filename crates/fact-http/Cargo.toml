@@ -3,30 +3,34 @@ name = "fact-http"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Reference HTTP client and server binding for the Facts protocol"
+repository = "https://github.com/facts-kms/sdk"
 
 [dependencies]
 axum.workspace = true
 bytes.workspace = true
-fact-commitment = { path = "../fact-commitment" }
 fact-canonical = { path = "../fact-canonical" }
-fact-crypto = { path = "../fact-crypto" }
+fact-commitment = { path = "../fact-commitment" }
 fact-core = { path = "../fact-core" }
+fact-crypto = { path = "../fact-crypto" }
 fact-search = { path = "../fact-search" }
 fact-store = { path = "../fact-store" }
+flate2.workspace = true
 http.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 rand.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+rusqlite.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-time.workspace = true
 thiserror.workspace = true
+time.workspace = true
 tokio.workspace = true
 tower.workspace = true
 tower-http.workspace = true
-flate2.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-fact-sdk = { path = "../fact-sdk" }
 tempfile.workspace = true
